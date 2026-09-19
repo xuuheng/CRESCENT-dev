@@ -52,12 +52,16 @@ struct Bin {
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {
-        std::cerr << "Usage: " << argv[0] << " <cancer_type>\n";
+        std::cerr << "Usage: " << argv[0] << " <cancer_type> [project_root]\n";
         return 1;
     }
 
     std::string cancer_type = argv[1];
-    std::string input_file = "/Users/sanjati/jangoTemp/temp2/pycharmD/Data/merged_dataframe/merged_dataframe_" + cancer_type + ".tsv";
+    std::filesystem::path project_root = argc >= 3
+        ? std::filesystem::path(argv[2])
+        : std::filesystem::current_path();
+    std::string input_file = (project_root / "Data" / "merged_dataframe" /
+        ("merged_dataframe_" + cancer_type + ".tsv")).string();
 
     std::ifstream infile(input_file);
     if (!infile) {
@@ -94,7 +98,8 @@ int main(int argc, char* argv[]) {
     }
 
     // 创建输出目录
-    std::string base_output_dir = "/Users/sanjati/jangoTemp/temp2/pycharmD/preprocess/Version0209/output/bin_with_case_del/" + cancer_type;
+    std::string base_output_dir = (project_root / "preprocess" / "Version0209" /
+        "output" / "bin_with_case_del" / cancer_type).string();
     std::filesystem::create_directories(base_output_dir);
 
     for (auto &pair : groups) {

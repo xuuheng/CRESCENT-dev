@@ -2,13 +2,16 @@
 # 这个是最新版的总的臂级分类和划分bin二合一的代码
 import pandas as pd
 import os
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 def ope(cancer_type):
     # cancer_type="LUAD"
     # 参数设置（文件路径和容差比例）
-    arm_file = "/Users/sanjati/jangoTemp/temp2/pycharmD/Data/ChromosomeData2025/GRCh38_Chromosome_Arm_Ranges.tsv"
-    cnv_file = f"/Users/sanjati/jangoTemp/temp2/pycharmD/Data/merged_dataframe/merged_dataframe_{cancer_type}.tsv"
-    output_dir = f"/Users/sanjati/jangoTemp/temp2/pycharmD/preprocess/Version0209/output/sorted/{cancer_type}"  # 输出文件夹
+    arm_file = PROJECT_ROOT / "Data" / "ChromosomeData2025" / "GRCh38_Chromosome_Arm_Ranges.tsv"
+    cnv_file = PROJECT_ROOT / "Data" / "merged_dataframe" / f"merged_dataframe_{cancer_type}.tsv"
+    output_dir = PROJECT_ROOT / "preprocess" / "Version0209" / "output" / "sorted" / cancer_type
     k = 0.3  # 片段长度相对于臂长度的倍数（k倍，默认0.5）
 
     # 如果输出文件夹不存在，则创建
@@ -114,10 +117,14 @@ def ope(cancer_type):
     import subprocess
 
     # 可执行文件路径（根据实际情况修改路径）
-    executable_path = "./gen_bin_del"
+    executable_path = Path(__file__).resolve().parent / "gen_bin_del"
 
     # 调用可执行文件，并传入参数
-    result = subprocess.run([executable_path, cancer_type], capture_output=True, text=True)
+    result = subprocess.run(
+        [str(executable_path), cancer_type, str(PROJECT_ROOT)],
+        capture_output=True,
+        text=True,
+    )
 
     # 输出执行结果
     print("标准输出：", result.stdout)

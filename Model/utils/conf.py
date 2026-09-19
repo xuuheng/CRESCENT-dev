@@ -1,6 +1,10 @@
+from pathlib import Path
+
+
 depth=40
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 CONFIG = {
-    "DATA_BASE_DIR": "/workspace/xuzheng/pyc_workspace/preprocess/Version0209/output/bin_with_case/",
+    "DATA_BASE_DIR": str(PROJECT_ROOT / "preprocess" / "Version0209" / "output" / "bin_with_case"),
     "FILE_EXTENSION": ".txt",
     "FEATURE_COL_START": 3,
     "FIXED_FEATURE_COLS": depth,
@@ -9,5 +13,5 @@ CONFIG = {
     "TYPE_CENTERS": {
         # 该部分在本函数中不再使用
     },
-    "OUTPUT_DIR": "/Users/sanjati/jangoTemp/temp2/pycharmD/GeneratedSamples"
+    "OUTPUT_DIR": str(PROJECT_ROOT / "GeneratedSamples")
 }

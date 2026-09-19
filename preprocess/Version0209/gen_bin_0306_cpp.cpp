@@ -256,13 +256,14 @@ private:
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {
-        std::cerr << "Usage: " << argv[0] << " <cancer_type>" << std::endl;
+        std::cerr << "Usage: " << argv[0] << " <cancer_type> [project_root]" << std::endl;
         return 1;
     }
     std::string cancer_type = argv[1];
+    fs::path project_root = argc >= 3 ? fs::path(argv[2]) : fs::current_path();
     // 根据输入的 cancer_type 构造输入与输出目录
-    std::string input_dir = "/Users/sanjati/jangoTemp/temp2/pycharmD/preprocess/Version0209/output/sorted/" + cancer_type;
-    std::string output_dir = "/Users/sanjati/jangoTemp/temp2/pycharmD/preprocess/Version0209/output/bin_with_case/" + cancer_type;
+    std::string input_dir = (project_root / "preprocess" / "Version0209" / "output" / "sorted" / cancer_type).string();
+    std::string output_dir = (project_root / "preprocess" / "Version0209" / "output" / "bin_with_case" / cancer_type).string();
 
     Processor processor(input_dir, output_dir);
     processor.process_all_files();

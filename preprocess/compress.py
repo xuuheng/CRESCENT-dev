@@ -3,25 +3,25 @@ import csv
 import os
 import pandas as pd
 
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 mut="del"
 host="se"
 # === 配置参数（写死在此处） ===
 if mut=="amp":
     if host=="local":
-        BASE_INPUT_DIR = '/Users/sanjati/jangoTemp/temp2/pycharmD/bin_with_case/'
-        OUTPUT_DIR = '/Users/sanjati/jangoTemp/temp2/pycharmD/bin_with_case_amp_compressed'
+        BASE_INPUT_DIR = os.path.join(PROJECT_ROOT, 'bin_with_case')
+        OUTPUT_DIR = os.path.join(PROJECT_ROOT, 'bin_with_case_amp_compressed')
     else:
-        BASE_INPUT_DIR = '/workspace/xuzheng/pyc_workspace/bin_with_case/'
-        OUTPUT_DIR = '/workspace/xuzheng/pyc_workspace/bin_with_case_amp_compressed_80'
-# INPUT_DIR = '/workspace/xuzheng/pyc_workspace/bin_with_case/CHOL'
-# OUTPUT_DIR = '/workspace/xuzheng/pyc_workspace/bin_with_case_amp_compressed'
+        BASE_INPUT_DIR = os.path.join(PROJECT_ROOT, 'bin_with_case')
+        OUTPUT_DIR = os.path.join(PROJECT_ROOT, 'bin_with_case_amp_compressed_80')
 elif mut=="del":
     if host=="local":
-        BASE_INPUT_DIR = '/Users/sanjati/jangoTemp/temp2/pycharmD/bin_with_case_del'
-        OUTPUT_DIR     = '/Users/sanjati/jangoTemp/temp2/pycharmD/bin_with_case_del_compressed_80'
+        BASE_INPUT_DIR = os.path.join(PROJECT_ROOT, 'bin_with_case_del')
+        OUTPUT_DIR     = os.path.join(PROJECT_ROOT, 'bin_with_case_del_compressed_80')
     else:
-        BASE_INPUT_DIR = '/workspace/xuzheng/pyc_workspace/bin_with_case_del'
-        OUTPUT_DIR     = '/workspace/xuzheng/pyc_workspace/bin_with_case_del_compressed_40'
+        BASE_INPUT_DIR = os.path.join(PROJECT_ROOT, 'bin_with_case_del')
+        OUTPUT_DIR     = os.path.join(PROJECT_ROOT, 'bin_with_case_del_compressed_40')
 K = 40  # 保留均值最高的前 K 列
 # ==============================
 

@@ -1,6 +1,10 @@
 import os
 import glob
 import pandas as pd
+from pathlib import Path
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 def load_intervals(file_path):
@@ -65,10 +69,10 @@ def process_file_A(fileA_path, df_B, df_C, output_dir):
 def main():
     cancer_type="BRCA"
     mut_type="amp"  # 待扩展
-    dir_A = f"/Users/sanjati/jangoTemp/temp2/pycharmD/Data/Matrix_cluster/{cancer_type}"  # 存储多个 A 类型文件的目录
-    GISTIC = f"/Users/sanjati/jangoTemp/temp2/pycharmD/Data/GISTIC_output_extracted/{cancer_type}/amp.tsv"  # 文件 B 的路径
-    RUBIC = f"/Users/sanjati/jangoTemp/temp2/pycharmD/Data/RUBIC_output/BRCA/gains/{cancer_type}.tsv"  # 文件 C 的路径
-    output_dir = f"/Users/sanjati/jangoTemp/temp2/pycharmD/Data/labeled_2025/{cancer_type}/{mut_type}"  # 输出目录
+    dir_A = PROJECT_ROOT / "Data" / "Matrix_cluster" / cancer_type
+    GISTIC = PROJECT_ROOT / "Data" / "GISTIC_output_extracted" / cancer_type / "amp.tsv"
+    RUBIC = PROJECT_ROOT / "Data" / "RUBIC_output" / "BRCA" / "gains" / f"{cancer_type}.tsv"
+    output_dir = PROJECT_ROOT / "Data" / "labeled_2025" / cancer_type / mut_type
 
     # 如果输出目录不存在，则创建
     os.makedirs(output_dir, exist_ok=True)
