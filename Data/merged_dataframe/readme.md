@@ -1,0 +1,2 @@
+总的copy number segment，但不是最终用于rubic输入的文件
+下面还要进行去重

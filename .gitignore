@@ -1,0 +1,65 @@
+# Operating systems
+.DS_Store
+Thumbs.db
+
+# IDEs and editors
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+*~
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+.Python
+.venv/
+venv/
+env/
+.env
+.env.*
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# Compiled native code
+*.o
+*.obj
+*.so
+*.dylib
+*.dll
+*.exe
+gen_bin_amp
+gen_bin_del
+
+# Generated datasets and preprocessing products
+bin_with_case*/
+GeneratedSamples*/
+HeatmapOutput*/
+
+# Training outputs and large model artifacts
+experimental/
+results/
+result/
+plots/
+checkpoints/
+*.pth
+*.pt
+*.ckpt
+
+# Logs and temporary files
+*.log
+*.tmp
+tmp/
+temp/
+
+# Keep the source merged CNA tables versioned intentionally.
+!Data/merged_dataframe/
+!Data/merged_dataframe/*.tsv

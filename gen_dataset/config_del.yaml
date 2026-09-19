@@ -1,0 +1,26 @@
+# Global settings
+
+
+DATA_BASE_DIR: "../bin_with_case_del_compressed_40/"
+OUTPUT_DIR: "../ds5"
+FILE_EXTENSION: ".tsv"
+
+FEATURE_COL_START: 3
+FIXED_FEATURE_COLS: 40
+FEATURE_COL_END: 43          # if omitted, loader will auto-set = FEATURE_COL_START + FIXED_FEATURE_COLS
+
+SCALE_INPUT_SHAPES:
+  - [20, 40]
+  - [50, 40]
+  - [400, 40]
+
+HAS_GLOBAL: false
+APPLY_ROW_NORMALIZATION: false
+# Historical alias you used in code; if APPLY_COLUMN_NORMALIZATION is missing,
+# the loader will map from APPLY_ROW_NORMALIZATION for compatibility:
+# APPLY_COLUMN_NORMALIZATION: false
+
+FILL_METHOD: "mean"
+SKIP_CONFLICTING_NEG: false
+CONFLICT_DISTANCE_M: 1.0
+

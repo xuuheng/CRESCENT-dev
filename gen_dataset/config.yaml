@@ -1,0 +1,28 @@
+# Global settings
+
+
+DATA_BASE_DIR: "../bin_with_case_amp_compressed/"
+OUTPUT_DIR: "../as5"
+# OUTPUT_DIR: "../GeneratedSamples_amp_compressed_rubicSim"
+
+FILE_EXTENSION: ".txt"
+
+FEATURE_COL_START: 3
+FIXED_FEATURE_COLS: 40
+FEATURE_COL_END: 43          # if omitted, loader will auto-set = FEATURE_COL_START + FIXED_FEATURE_COLS
+
+SCALE_INPUT_SHAPES:
+  - [50, 40]
+  - [250, 40]
+  - [2000, 40]
+
+HAS_GLOBAL: false
+APPLY_ROW_NORMALIZATION: false
+# Historical alias you used in code; if APPLY_COLUMN_NORMALIZATION is missing,
+# the loader will map from APPLY_ROW_NORMALIZATION for compatibility:
+# APPLY_COLUMN_NORMALIZATION: false
+
+FILL_METHOD: "mean"
+SKIP_CONFLICTING_NEG: false
+CONFLICT_DISTANCE_M: 1.0
+
