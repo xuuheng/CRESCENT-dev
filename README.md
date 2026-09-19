@@ -1,6 +1,10 @@
 # CRESCENT-dev
 
-Development and training archive for **CRESCENT**, a deep-learning framework for detecting recurrent copy-number amplifications (`amp`) and deletions (`del`). This repository collects the latest coherent preprocessing, labeled-sample generation, dataset loading, model, and leave-one-project-out validation code found in the original development tree.
+Development and training archive for `CRESCENT`, a deep-learning framework for detecting recurrent copy-number amplifications (`amp`) and deletions (`del`). This repository collects the latest coherent preprocessing, labeled-sample generation, dataset loading, model, and leave-one-project-out validation code found in the original development tree.
+
+If you are primarily interested in using **CRESCENT** for inference, please refer to [**CRESCENT**](https://github.com/BioThinkLab/CRESCENT), which provides a streamlined and performance-optimized implementation with substantially lower RAM and storage requirements, making it more suitable for use on personal computers.
+
+This repository contains the complete research codebase, including the training, validation, and evaluation pipelines. In addition to the final implementation, some modules also retain experimental variants explored during development. These are included for completeness and reproducibility of the research process, and may not represent the recommended or best-performing configurations.
 
 ## Included
 
@@ -35,7 +39,7 @@ There is no single unambiguous final label file in the original tree, so candida
 - `type_centers_index_0908.yaml`, `type_centers_index_0912.yaml`, and `type_centers_index_L.yaml`: alternative real-cohort snapshots.
 - `center_position.yaml`: coordinate-based 20-project labels; convert with `centers_coord_to_index.py` when needed.
 - `type_centers_index.yaml` and `type_centers_index_del.yaml`: current generator defaults, but both contain `RUBIC5` simulation labels.
-- `rubic_sim_a.yaml`: another simulation label set.
+- `rubic_sim_a.yaml`: for stimulation dataset provided by `RUBIC`.
 
 For a chosen label file, set `GENSAMPLES_TYPE_CENTERS` before running a generator. Set `GENSAMPLES_CONFIG` to select the amp or del configuration.
 
@@ -61,10 +65,6 @@ cd Model
 python auto_cross_ct_val.py
 ```
 
-Before a real run, review the bottom configuration block in `auto_cross_ct_val.py`. The archived latest version still carries development settings (`num_epochs=1`, a single `LIHC` target, and legacy sample paths). Its `auto_cross_val()` implementation is the selected current leave-one-project-out pipeline, but the entry-point values must be set for the intended experiment.
+Please note that `auto_cross_ct_val.py` runs with a target TCGA-project as the held-out dataset ,it contains configuration in the bottom block. If you want to run on a specific project or try different configuration, change configuration accordingly.
 
-Several preprocessing files also retain absolute paths from the original workstation. These are preserved as provenance and should be changed to local paths before regenerating bins. See `docs/TRAIN_VALIDATION_PIPELINE_RECONSTRUCTION.md` for the exact data contracts, alternatives, and known release decisions.
 
-## Citation
-
-If this archive supports published work, cite the CRESCENT article: *CRESCENT: a deep learning framework with multi-scale attention for detecting recurrent copy number alterations*.
