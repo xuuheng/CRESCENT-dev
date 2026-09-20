@@ -11,7 +11,7 @@ CONFIG = {
     "FEATURE_COL_END": 3 + depth,
     "SCALE_INPUT_SHAPES": [(100, depth), (500, depth), (2000, depth)],
     "TYPE_CENTERS": {
-        # 该部分在本函数中不再使用
+        # Supplied externally by the sample-generation configuration.
     },
     "OUTPUT_DIR": str(PROJECT_ROOT / "GeneratedSamples")
 }

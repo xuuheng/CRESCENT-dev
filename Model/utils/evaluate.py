@@ -25,9 +25,11 @@ from sklearn.metrics import (
 )
 
 def evaluate_detailed(model, dataloader, criterion, device):
-    """
-    验证函数，返回 avg_loss, acc, precision, recall, f1, AUC, 混淆矩阵, 真实标签列表, 预测正类概率列表, 最佳阈值。
-    适配 BCEWithLogitsLoss：使用 sigmoid 而非 softmax。
+    """Evaluate binary predictions and select the validation F1 threshold.
+
+    Returns loss, classification metrics, the confusion matrix, labels,
+    positive-class probabilities, and the selected threshold. Probabilities
+    use sigmoid because the model is trained with BCEWithLogitsLoss.
     """
     model.eval()
     gt = []
@@ -36,43 +38,36 @@ def evaluate_detailed(model, dataloader, criterion, device):
 
     with torch.no_grad():
         for batch in dataloader:
-            # 解包 batch
             if len(batch) == 3:
                 inputs, labels, _ = batch
             else:
                 inputs, labels = batch
 
-            # 送入 device，并确保标签为 float
             inputs = [x.to(device) for x in inputs]
             labels = labels.to(device).float()            # {0,1} -> {0.0,1.0}
 
-            # 前向 + loss
             logits = model(inputs)                        # shape: [batch]
             loss = criterion(logits, labels)             # BCEWithLogitsLoss
             total_loss += loss.item() * labels.size(0)
 
-            # 概率计算
             probs = torch.sigmoid(logits)                 # shape: [batch], in (0,1)
             prob_positive_list.extend(probs.cpu().tolist())
             gt.extend(labels.cpu().tolist())
 
-    # 平均 loss
     avg_loss = total_loss / len(dataloader.dataset)
 
-    # >>>> 自适应阈值 <<<<
+    # Select the threshold that maximizes F1 on this validation set.
     prob_np = np.array(prob_positive_list)
     gt_np   = np.array(gt)
 
     precisions, recalls, thresholds = precision_recall_curve(gt_np, prob_np)
     f1s = 2 * (precisions * recalls) / (precisions + recalls + 1e-8)
     best_idx = np.argmax(f1s)
-    # thresholds 长度比 f1s 少 1，如果 best_idx 超出范围，就用 0.5
+    # precision_recall_curve returns one fewer threshold than precision/recall.
     best_threshold = thresholds[best_idx] if best_idx < len(thresholds) else 0.5
 
-    # 用最佳阈值重新计算预测标签
     final_preds = (prob_np >= best_threshold).astype(int)
 
-    # 计算各项指标
     acc  = accuracy_score(gt_np, final_preds)
     prec = precision_score(gt_np, final_preds, zero_division=0)
     rec  = recall_score(gt_np, final_preds, zero_division=0)
@@ -92,10 +87,7 @@ import torch
 
 
 def visualize_features(model, dataloader, device, perplexity=5, save_path=None):
-    """
-    提取模型融合后的特征，利用 t-SNE 降维到2D，并绘制散点图（颜色代表类别）。
-    如果提供了 save_path 参数，则保存图像到指定路径；否则调用 plt.show() 展示图像。
-    """
+    """Project fused model features to 2D with t-SNE and plot by class."""
     model.eval()
     features_list = []
     labels_list = []
@@ -126,7 +118,6 @@ def visualize_features(model, dataloader, device, perplexity=5, save_path=None):
     if save_path is not None:
         plt.savefig(save_path)
         plt.close()
-        print(f"t-SNE图已保存到 {save_path}")
+        print(f"Saved t-SNE plot to {save_path}")
     else:
         plt.show()
-

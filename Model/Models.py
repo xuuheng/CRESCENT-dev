@@ -1,16 +1,11 @@
 import torch
 from torch import nn
 
-# torch.manual_seed(42)
-
-# ---------------------
-# 模型定义（适配 BCEWithLogitsLoss 二分类）
-# ---------------------
+# Binary classifier compatible with BCEWithLogitsLoss.
 
 class MLPHead(nn.Module):
     def __init__(self, in_dim, hidden_dim, num_classes=1, drop=0.1):
         super().__init__()
-        # num_classes=1 表示输出一个 logit
         self.net = nn.Sequential(
             nn.LayerNorm(in_dim),
             nn.Linear(in_dim, hidden_dim),
@@ -20,8 +15,6 @@ class MLPHead(nn.Module):
         )
 
     def forward(self, x):
-        # x: (batch, in_dim)
-        # 输出: (batch, num_classes)
         return self.net(x)
 
 
@@ -107,27 +100,25 @@ class ComplexMultiStreamCNN(nn.Module):
     def __init__(
         self,
         input_shapes,
-        feature_dim=256, # 512/256
-        num_classes=1,       # 二分类：1 个输出 logit
+        feature_dim=256,
+        num_classes=1,
         drop_prob=0.1
     ):
         super().__init__()
         self.feature_dim = feature_dim
 
-        # 多路分支
         self.branches = nn.ModuleList([
             self._make_branch(feature_dim, drop_prob)
             for _ in input_shapes
         ])
 
-        # 多头自注意力
         self.multihead_attn = nn.MultiheadAttention(
             embed_dim=feature_dim,
             num_heads=4,
             batch_first=True
         )
 
-        # Transformer 风格残差 + LayerNorm + FFN
+        # Transformer-style residual attention block.
         self.norm1 = nn.LayerNorm(feature_dim)
         self.ffn = nn.Sequential(
             nn.Linear(feature_dim, feature_dim * 4),
@@ -136,18 +127,13 @@ class ComplexMultiStreamCNN(nn.Module):
         )
         self.norm2 = nn.LayerNorm(feature_dim)
 
-        # 最终分类器：输出 (batch, 1)
         self.classifier = MLPHead(feature_dim, feature_dim, num_classes, drop=drop_prob)
 
     def _make_branch(self, feature_dim, drop_prob):
-        i1=32 #64/32
-        m1=64 #128/64
-        m2=128 #256/128
-        o1=128 #512/128
-        # i1=64 #64/32
-        # m1=128 #128/64
-        # m2=256 #256/128
-        # o1=512 #512/128
+        i1=32
+        m1=64
+        m2=128
+        o1=128
         return nn.Sequential(
             SeparableConv2d(1, i1, kernel_size=3, stride=1, padding=1),
             nn.BatchNorm2d(i1),
@@ -169,24 +155,19 @@ class ComplexMultiStreamCNN(nn.Module):
         )
 
     def forward(self, inputs):
-        # inputs: list of tensors, 每个 (B,1,H,W)
+        # Each input branch has shape (B, 1, H, W).
         orig_feats = [branch(x) for branch, x in zip(self.branches, inputs)]
-        # -> list of (B, feature_dim)
 
-        # 拼接 -> (B, N, feature_dim)
         feat_stack = torch.stack(orig_feats, dim=1)
 
-        # 多头自注意力
         attn_out, _ = self.multihead_attn(feat_stack, feat_stack, feat_stack)
 
-        # 残差 + Norm + FFN
         res1 = feat_stack + attn_out
         normed1 = self.norm1(res1)
         ffn_out = self.ffn(normed1)
         res2 = normed1 + ffn_out
         normed2 = self.norm2(res2)
 
-        # 融合并分类
-        fused = normed2.mean(dim=1)          # -> (B, feature_dim)
-        logits = self.classifier(fused)      # -> (B, 1)
-        return logits.squeeze(-1)            # -> (B,)
+        fused = normed2.mean(dim=1)
+        logits = self.classifier(fused)
+        return logits.squeeze(-1)

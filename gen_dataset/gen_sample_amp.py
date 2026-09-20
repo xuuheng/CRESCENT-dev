@@ -297,7 +297,7 @@ def write_sample_tsv(filepath, scale_matrices, label):
             for row in mat:
                 f.write("\t".join(map(str, row)) + "\n")
             f.write("\n")
-    print(f"写入: {filepath}")
+    print(f"Wrote: {filepath}")
 
 
 def compress_matrix(mat, target_rows=8000):
@@ -351,13 +351,11 @@ def generate_samples(is_output: bool = True):
     total_neg = 0
 
     for type_name, chrom_dict in CONFIG["TYPE_CENTERS"].items():
-        print(f"处理 type: {type_name}")
+        print(f"Processing type: {type_name}")
         type_dir = os.path.join(base_dir, type_name)
         file_list = glob.glob(os.path.join(type_dir, "*" + file_ext))
         if not file_list:
-            print(f"警告: {type_dir} 无数据文件。")
-            # 仍继续解析配置，但由于无数据，该 type 的计数可能为 0
-        # 初始化当前 type 计数容器
+            print(f"Warning: no data files found in {type_dir}.")
         type_counters.setdefault(type_name, {"pos": 0, "neg": 0})
 
         # Merge all files under this type; group by 'chr'
@@ -366,10 +364,10 @@ def generate_samples(is_output: bool = True):
             try:
                 df = pd.read_csv(filepath, sep="\t")
             except Exception as e:
-                print(f"读取文件 {filepath} 时出错：", e)
+                print(f"Failed to read {filepath}:", e)
                 continue
             if "chr" not in df.columns:
-                print(f"警告: 文件 {filepath} 缺少 'chr' 列，已跳过。")
+                print(f"Warning: skipping {filepath}; missing column 'chr'.")
                 continue
             for chrom in df["chr"].unique():
                 chrom_data.setdefault(chrom, []).append(df)
@@ -383,7 +381,7 @@ def generate_samples(is_output: bool = True):
                 # Assume the first column stores the start coordinate (bp)
                 df_chrom["start"] = pd.to_numeric(df_chrom.iloc[:, 0], errors="coerce")
             except Exception as e:
-                print(f"转换 {chrom} 的起始位置时出错：", e)
+                print(f"Failed to convert start positions for {chrom}:", e)
                 del chrom_data[chrom]
                 continue
 
@@ -393,7 +391,7 @@ def generate_samples(is_output: bool = True):
             try:
                 feature_data = df_chrom.iloc[:, feat_start:feat_end].astype(float).values
             except Exception as e:
-                print(f"提取 {chrom} 的特征矩阵区间[{feat_start}:{feat_end})失败：{e}")
+                print(f"Failed to extract {chrom} feature columns [{feat_start}:{feat_end}): {e}")
                 del chrom_data[chrom]
                 continue
 
@@ -406,7 +404,7 @@ def generate_samples(is_output: bool = True):
         # Resolve configured indices for this type
         for chrom, centers in chrom_dict.items():
             if (type_name, chrom) not in data_cache:
-                print(f"跳过: {type_name} 无 {chrom} 数据")
+                print(f"Skipping {type_name}: no data for {chrom}")
                 continue
 
             starts = data_cache[(type_name, chrom)]["starts"]
@@ -420,7 +418,7 @@ def generate_samples(is_output: bool = True):
             for label, idx_list in ((1, pos_indices), (0, neg_indices)):
                 for idx in idx_list:
                     if idx < 0 or idx >= nrows:
-                        print(f"跳过: {type_name} {chrom} 索引 {idx} 超出范围 [0, {nrows-1}]")
+                        print(f"Skipping {type_name} {chrom}: index {idx} outside [0, {nrows-1}]")
                         continue
                     center_bp = int(starts[idx]) if np.isfinite(starts[idx]) else int(-1)
                     center_m = float(center_bp) / 1e6 if center_bp >= 0 else float("nan")
@@ -449,16 +447,16 @@ def generate_samples(is_output: bool = True):
     #         columns=["cancer_type", "chrom", "label", "center_M", "center_bp", "row_index"]
     #     )
     #     idx_df.to_csv(loci_tsv_path, sep="\t", index=False)
-    #     print(f"已输出位点清单（将要处理）: {loci_tsv_path}（共 {len(selected_records)} 条）")
+    #     print(f"Wrote {len(selected_records)} selected loci to {loci_tsv_path}")
     # else:
-    #     print("无可处理位点，已结束。")
+    #     print("No loci to process.")
     #     return type_counters  # ---- NEW: return counters even if empty ----
 
     # ---------- PASS2: multi-scale extraction and write files ----------
     for (type_name, chrom, label, center_m, center_bp, idx) in selected_records:
         cache_key = (type_name, chrom)
         if cache_key not in data_cache:
-            print(f"跳过: {type_name} {chrom} 数据缓存缺失（可能在 PASS1 中失败）。")
+            print(f"Skipping {type_name} {chrom}: data cache is missing after pass 1.")
             continue
 
         feature_data = data_cache[cache_key]["feature_data"]
@@ -472,11 +470,13 @@ def generate_samples(is_output: bool = True):
                 mat = extract_matrix_from_feature_data(feature_data, idx, H, W, norm_scope='full')
             except Exception as e:
                 # keep logging center_m (derived) for continuity
-                print(f"跳过 {type_name} {chrom} {'正' if label==1 else '负'}例 idx={idx}：提取出错 -> {e}")
+                class_name = "positive" if label == 1 else "negative"
+                print(f"Skipping {class_name} {type_name} {chrom} idx={idx}: extraction failed -> {e}")
                 skip = True
                 break
             if mat.shape != (H, W):
-                print(f"跳过 {type_name} {chrom} {'正' if label==1 else '负'}例 idx={idx}：尺寸 {mat.shape} 不符 ({H},{W})")
+                class_name = "positive" if label == 1 else "negative"
+                print(f"Skipping {class_name} {type_name} {chrom} idx={idx}: shape {mat.shape}, expected ({H},{W})")
                 skip = True
                 break
             scale_matrices.append(mat)
@@ -493,11 +493,13 @@ def generate_samples(is_output: bool = True):
                 shifted = np.roll(full_mat, shift=shift, axis=0)
                 compressed = compress_matrix(shifted, target_rows=8000)
                 if np.isnan(compressed).any():
-                    print(f"跳过 {type_name} {chrom} {'正' if label==1 else '负'}例 idx={idx}：压缩矩阵包含 NaN")
+                    class_name = "positive" if label == 1 else "negative"
+                    print(f"Skipping {class_name} {type_name} {chrom} idx={idx}: compressed matrix contains NaN")
                     continue
                 scale_matrices.append(compressed)
             except Exception as e:
-                print(f"跳过 {type_name} {chrom} {'正' if label==1 else '负'}例 idx={idx}：追加压缩出错 -> {e}")
+                class_name = "positive" if label == 1 else "negative"
+                print(f"Skipping {class_name} {type_name} {chrom} idx={idx}: compression failed -> {e}")
                 continue
 
         # Use center_bp (derived from index) in filename to keep the same naming scheme

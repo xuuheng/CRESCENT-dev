@@ -16,7 +16,7 @@ from sklearn.metrics import roc_curve
 from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 
-# 第三方可选：用于进程内存统计；若没有会自动降级
+# Optional process-memory reporting.
 try:
     import psutil
 except Exception:
@@ -27,7 +27,7 @@ from Models import ComplexMultiStreamCNN
 from Models import ComplexMultiStreamCNN
 from utils.Dataset import TSVDataset
 from utils.train import train_one_epoch
-from utils.evaluate import evaluate_detailed  # 返回 val_loss, acc, prec, rec, f1, auc, cm, gt, probs, best_threshold
+from utils.evaluate import evaluate_detailed
 
 
 output_dir = "../experimental/"
@@ -42,19 +42,14 @@ TIMES_TTF = os.path.expanduser("~/front/times.ttf")
 if os.path.exists(TIMES_TTF):
     font_manager.fontManager.addfont(TIMES_TTF)
 
-    # 可选：打印确认一下 matplotlib 是否识别到了
     try:
         prop = font_manager.FontProperties(fname=TIMES_TTF)
         print("Loaded font:", prop.get_name())
     except Exception as e:
         print("Font load failed:", e)
 
-# --------------------- 外部工具：从 epoch_metrics 选择各类“最佳” ---------------------
 def _select_best_epochs(metrics_tsv: str) -> Dict[str, Optional[int]]:
-    """
-    返回各指标对应的最佳 epoch（1-based）。若文件缺失或列缺失，返回 None。
-    keys: 'auc', 'f1', 'valloss', 'avg' (avg = (auc+f1)/2)
-    """
+    """Return the best 1-based epoch for each available validation metric."""
     if not os.path.isfile(metrics_tsv):
         return dict(auc=None, f1=None, valloss=None, avg=None)
 
@@ -62,22 +57,18 @@ def _select_best_epochs(metrics_tsv: str) -> Dict[str, Optional[int]]:
     needs = {'val_auc':'auc', 'val_f1':'f1', 'val_loss':'valloss'}
     for col in needs:
         if col not in df.columns:
-            needs[col] = None  # 标记缺失
+            needs[col] = None
 
     out = {'auc': None, 'f1': None, 'valloss': None, 'avg': None}
-    # AUC 最高
     if needs['val_auc']:
         e = int(df['epoch'].iloc[df['val_auc'].idxmax()])
         out['auc'] = e
-    # F1 最高
     if needs['val_f1']:
         e = int(df['epoch'].iloc[df['val_f1'].idxmax()])
         out['f1'] = e
-    # ValLoss 最低
     if needs['val_loss']:
         e = int(df['epoch'].iloc[df['val_loss'].idxmin()])
         out['valloss'] = e
-    # (AUC+F1)/2 最高
     if needs['val_auc'] and needs['val_f1']:
         avg_series = (df['val_auc'] + df['val_f1']) / 2.0
         e = int(df['epoch'].iloc[avg_series.idxmax()])
@@ -86,10 +77,7 @@ def _select_best_epochs(metrics_tsv: str) -> Dict[str, Optional[int]]:
 
 
 def _resolve_checkpoint_for_epoch(outs_dir: str, epoch: int) -> Optional[str]:
-    """
-    在 outs_dir 下查找该 epoch 的权重文件（训练阶段保存的最后20个：model_epoch_XXX.pth）。
-    找不到返回 None。
-    """
+    """Return a saved checkpoint for an epoch, or ``None`` if unavailable."""
     if epoch is None:
         return None
     ckpt = os.path.join(outs_dir, f"model_epoch_{epoch:03d}.pth")
@@ -98,13 +86,10 @@ def _resolve_checkpoint_for_epoch(outs_dir: str, epoch: int) -> Optional[str]:
 
 def export_multi_best_models(session_dir: str,
                              criteria: Tuple[str, ...] = ('auc', 'f1', 'valloss', 'avg')) -> None:
-    """
-    对 session_dir 下每个癌症类型子目录，导出多份 best model：
-      - best_by_auc.pth, best_by_f1.pth, best_by_valloss.pth, best_by_avg.pth
-    说明：
-      - F1 对应的 best 若 `best_model.pth` 存在则优先用它；否则回落到对应 epoch 的快照。
-      - 其余指标依赖训练阶段已保存的 per-epoch 快照（本方案为“最后20个epoch”）。
-      - 若最佳 epoch 不在已保存快照中，将在 `export_warnings.txt` 记录提示，不报错。
+    """Export best checkpoints by AUC, F1, validation loss, and mean score.
+
+    F1 prefers ``best_model.pth``. Other criteria use saved epoch snapshots.
+    Missing snapshots are recorded in ``export_warnings.txt``.
     """
     warn_lines = []
     for ct in sorted(os.listdir(session_dir)):
@@ -115,7 +100,6 @@ def export_multi_best_models(session_dir: str,
         metrics_tsv = os.path.join(outs_dir, "epoch_metrics.tsv")
         best_epochs = _select_best_epochs(metrics_tsv)
 
-        # F1：优先使用 best_model.pth
         if 'f1' in criteria:
             best_f1_path = os.path.join(outs_dir, "best_model.pth")
             if os.path.isfile(best_f1_path):
@@ -128,7 +112,6 @@ def export_multi_best_models(session_dir: str,
                 else:
                     warn_lines.append(f"[{ct}] best_by_f1 epoch={ep} checkpoint not found.")
 
-        # 其它指标：从快照查找
         for key, fname in [('auc','best_by_auc.pth'),
                            ('valloss','best_by_valloss.pth'),
                            ('avg','best_by_avg.pth')]:
@@ -141,37 +124,32 @@ def export_multi_best_models(session_dir: str,
             else:
                 warn_lines.append(f"[{ct}] {fname} epoch={ep} checkpoint not found.")
 
-        # 保存一个总览
         with open(os.path.join(outs_dir, "best_model_selection.json"), "w") as jf:
             json.dump(best_epochs, jf, indent=2)
 
     if warn_lines:
         with open(os.path.join(session_dir, "export_warnings.txt"), "w") as wf:
             wf.write("\n".join(warn_lines))
-        print("⚠️ 部分最佳epoch未找到对应快照，详情见 export_warnings.txt")
+        print("Some best epochs have no saved snapshot; see export_warnings.txt.")
     else:
-        print("✅ 多指标 best models 导出完成。")
+        print("Finished exporting best models by metric.")
 
 
-# --------------------- 外部工具：基于多个best模型的 t-SNE ---------------------
 @torch.no_grad()
 def _collect_logits(model: nn.Module,
                     loader: DataLoader,
                     device: torch.device) -> Tuple[np.ndarray, np.ndarray, List[str]]:
-    """
-    返回：logits: [N], labels: [N], filenames: list[str]
-    使用模型直接前向，取最终 logit（不做sigmoid）。适配你现有 Dataset+collate。
-    """
+    """Return raw logits, labels, and filenames for one data loader."""
     model.eval()
     all_logits, all_labels, all_names = [], [], []
     for branches, labels, names in loader:
         # branches: list of [B, C, H, W] tensors
         branches = [b.to(device, non_blocking=True) for b in branches]
-        logits = model(branches)  # 期望输出 shape [B, 1] 或 [B]
+        logits = model(branches)
         if logits.ndim == 2 and logits.shape[1] == 1:
             logits = logits.squeeze(1)
         elif logits.ndim != 1:
-            logits = logits.view(logits.shape[0], -1).mean(1)  # 兜底
+            logits = logits.view(logits.shape[0], -1).mean(1)
         all_logits.append(logits.detach().cpu().numpy())
         all_labels.append(labels.numpy())
         all_names.extend(list(names))
@@ -186,23 +164,18 @@ def build_tsne_for_multi_best(session_dir: str,
                               perplexity: float = 30.0,
                               n_iter: int = 1000,
                               random_state: int = 42) -> None:
+    """Build a t-SNE projection from the available best-model logits.
+
+    Writes coordinates, parameters, and a scatter plot under each cancer
+    project's output directory.
     """
-    对每个癌症类型的验证集，用导出的多个 best 模型（若存在）分别取 logit，拼为 [N × M]，做 t-SNE。
-    产物（写在各自 outs_dir 下）：
-      - tsne_coords.tsv
-      - tsne_params.json
-      - tsne_scatter.png
-    依赖：对应 outs_dir 下存在 best_by_*.pth；若某些不存在，则降维时仅使用存在的那几类模型。
-    """
-    # 复用 Dataset 配置（与训练一致）
     dataset = TSVDataset(data_dir)
     if len(dataset) == 0:
-        print("未找到有效的样本！"); return
+        print("No valid samples found."); return
     first_sample, _, _ = dataset[0]
     input_shapes = [(t.shape[1], t.shape[2]) for t in first_sample]
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # 收集癌症类型
     all_types = sorted(set(fn.split('_')[0] for _, _, fn in dataset))
     cancer_types = [t for t in (target_cancer_types or all_types) if t in all_types]
 
@@ -211,7 +184,6 @@ def build_tsne_for_multi_best(session_dir: str,
         if not os.path.isdir(outs_dir):
             continue
 
-        # 需要的模型清单（存在即用）
         tag_to_fname = {
             'f1':      'best_by_f1.pth',
             'auc':     'best_by_auc.pth',
@@ -222,10 +194,9 @@ def build_tsne_for_multi_best(session_dir: str,
                     for tag, fn in tag_to_fname.items()
                     if os.path.isfile(os.path.join(outs_dir, fn))}
         if not existing:
-            print(f"[{ct}] 没有可用的 best_by_* 模型，跳过 t-SNE。")
+            print(f"[{ct}] No best_by_* models found; skipping t-SNE.")
             continue
 
-        # 划分验证集（与训练一致：该 ct 作为 val）
         indices = list(range(len(dataset)))
         val_indices = [i for i in indices if dataset[i][2].split('_')[0] == ct]
         val_loader = DataLoader(
@@ -233,7 +204,6 @@ def build_tsne_for_multi_best(session_dir: str,
             collate_fn=multi_branch_collate, num_workers=1
         )
 
-        # 对每个现有 best 模型收集 logits
         matrix_list, tags = [], []
         labels_ref, names_ref = None, None
         for tag, path in existing.items():
@@ -252,14 +222,12 @@ def build_tsne_for_multi_best(session_dir: str,
                     init='pca', learning_rate='auto', random_state=random_state)
         coords = tsne.fit_transform(X)  # [N, 2]
 
-        # 保存可复现数据
         df_out = pd.DataFrame({
             'x': coords[:, 0],
             'y': coords[:, 1],
             'label': labels_ref,
             'file_name': names_ref,
         })
-        # 附加每个模型的 logit 列，便于重绘或做别的投影
         for j, tag in enumerate(tags):
             df_out[f'logit_{tag}'] = X[:, j]
 
@@ -276,22 +244,19 @@ def build_tsne_for_multi_best(session_dir: str,
                 'M_models': int(X.shape[1]),
             }, jf, indent=2)
 
-        # 简单绘图（可选）
         plt.figure(figsize=(5,4))
         scatter = plt.scatter(df_out['x'], df_out['y'], c=df_out['label'], s=10, alpha=0.8)
         plt.title(f"t-SNE of best models — {ct}")
         plt.xlabel('t-SNE 1'); plt.ylabel('t-SNE 2'); plt.grid(True, ls=':')
         plt.savefig(os.path.join(outs_dir, "tsne_scatter.png"), dpi=200)
         plt.close()
-        print(f"[{ct}] t-SNE 完成：{outs_dir}/tsne_coords.tsv, tsne_scatter.png")
+        print(f"[{ct}] Wrote t-SNE outputs to {outs_dir}")
 
 
 def get_prefix(fn: str) -> str:
-    # 用来识别增强数据集
     name = os.path.splitext(fn)[0]
     return name.split('_aug_')[0]
 
-# --------------------- 固定随机性 ---------------------
 def set_seed(seed: int = 42):
     _py_random.seed(seed)
     np.random.seed(seed)
@@ -301,11 +266,9 @@ def set_seed(seed: int = 42):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-# --------------------- 移动平均平滑函数 ---------------------
 def moving_average(x, w=5):
     return np.convolve(x, np.ones(w) / w, mode='valid')
 
-# --------------------- 简易资源监控工具 ---------------------
 def _bytes_to_mb(x):
     return float(x) / (1024.0 ** 2)
 
@@ -316,9 +279,7 @@ def gpu_name_total_mb(device_idx=0):
     return (props.name, _bytes_to_mb(props.total_memory))
 
 def gpu_mem_info_mb():
-    """
-    返回 (free_mb, total_mb) 若 CUDA 可用；否则返回 (None, None)
-    """
+    """Return free and total CUDA memory in MiB when CUDA is available."""
     if not torch.cuda.is_available():
         return (None, None)
     try:
@@ -346,7 +307,6 @@ def cpu_rss_mb():
     except Exception:
         return None
 
-# --------------------- 数据集的 collate 函数 ---------------------
 def multi_branch_collate(batch):
     if not batch:
         return None
@@ -359,46 +319,36 @@ def multi_branch_collate(batch):
     return branch_batches, labels, file_names
 
 
-# --------------------- 训练与验证函数 ---------------------
 def auto_cross_val(data_dir,
                    mut="del",
                    target_cancer_types=None,
                    seed=42):
-    """
-    data_dir: 样本目录
-    mut: 变异类型目录名
-    target_cancer_types: None 或者 list of str，指定要留出的 cancer_type 列表
-    """
+    """Run leave-one-cancer-project-out training and validation."""
     set_seed(seed)
     dataset = TSVDataset(data_dir)
     if len(dataset) == 0:
-        print("未找到有效的样本！")
+        print("No valid samples found.")
         return
 
-    # 输入形状
     first_sample, _, _ = dataset[0]
     input_shapes = [(t.shape[1], t.shape[2]) for t in first_sample]
-    print("输入分支尺寸：", input_shapes)
+    print("Input branch shapes:", input_shapes)
 
-    # 收集所有或指定的癌症类型
     all_types = set(fn.split('_')[0] for _, _, fn in dataset)
     if target_cancer_types is not None:
         cancer_types = [t for t in target_cancer_types if t in all_types]
         missing = set(target_cancer_types) - set(cancer_types)
         if missing:
-            print(f"警告：以下指定的 cancer_type 在数据中未找到，将被忽略: {missing}")
+            print(f"Warning: requested cancer types not found and ignored: {missing}")
     else:
         cancer_types = sorted(all_types)
-    print("运行的 cancer_type 列表：", cancer_types)
+    print("Cancer types to run:", cancer_types)
 
-    # 超参数
     num_epochs, batch_size, learning_rate = 1, 8, 1e-5  # amp:lr=1e-5
     device = torch.device("cuda" if torch.cuda.is_available()  else "cpu")
 
-    # 配置要保存的尾部 epoch 数
-    save_last_k = 30  # 保存最后 20 个 epoch 的权重
+    save_last_k = 30
 
-    # 创建会话目录
     base_dir = os.path.join(output_dir, mut)
     session_dir = os.path.join(
         base_dir,
@@ -406,7 +356,6 @@ def auto_cross_val(data_dir,
     )
     os.makedirs(session_dir, exist_ok=True)
 
-    # ------ 硬件环境与超参落盘 ------
     gpu_name, gpu_total_mb = gpu_name_total_mb(0)
     with open(os.path.join(session_dir, "hyperparameters.txt"), "w") as f:
         f.write(f"num_epochs: {num_epochs}\n")
@@ -424,7 +373,6 @@ def auto_cross_val(data_dir,
             except Exception:
                 pass
 
-    # 全局 summary 文件路径
     summary_tsv = os.path.join(session_dir, "summary_metrics.tsv")
     header = [
         'cancer_type','best_epoch','best_loss','best_auc','best_f1',
@@ -434,15 +382,13 @@ def auto_cross_val(data_dir,
         with open(summary_tsv, 'w') as f:
             f.write("\t".join(header) + "\n")
 
-    # ==== 针对每个留出的 cancer_type ====
     for val_cancer_type in cancer_types:
-        print(f"\n===== 验证留出类型: {val_cancer_type} =====")
+        print(f"\n===== Held-out validation type: {val_cancer_type} =====")
         indices = list(range(len(dataset)))
-        # 留出当前类型作为验证集，其他全部作为训练集
         train_indices = [i for i in indices if dataset[i][2].split('_')[0] != val_cancer_type]
         val_indices   = [i for i in indices if dataset[i][2].split('_')[0] == val_cancer_type]
 
-        print(f"训练集大小: {len(train_indices)}, 验证集大小: {len(val_indices)}")
+        print(f"Training size: {len(train_indices)}, validation size: {len(val_indices)}")
 
         train_loader = DataLoader(
             Subset(dataset, train_indices), batch_size=batch_size,
@@ -462,19 +408,16 @@ def auto_cross_val(data_dir,
         )
         criterion = nn.BCEWithLogitsLoss()
 
-        # 记录历史
         train_loss_hist, train_acc_hist = [], []
         val_loss_hist, val_acc_hist, val_auc_hist, val_f1_hist = [], [], [], []
 
-        # ****** 最优选择逻辑：按 F1 最高（若相等则 AUC 更高者胜） ******
+        # Select by validation F1, using AUC as the tie-breaker.
         best_f1, best_auc_tiebreak = -float('inf'), -float('inf')
         best_epoch, best_state = -1, None
 
-        # 可视化/输出目录
         outs_dir = os.path.join(session_dir, val_cancer_type)
         os.makedirs(outs_dir, exist_ok=True)
 
-        # >>> 新增：最后 K 个 epoch 权重的清单
         lastk_manifest = os.path.join(outs_dir, "last20_models_manifest.txt")
         if os.path.exists(lastk_manifest):
             os.remove(lastk_manifest)
@@ -482,7 +425,6 @@ def auto_cross_val(data_dir,
         loss_fig, loss_ax = plt.subplots(figsize=(6, 4))
         acc_fig, acc_ax = plt.subplots(figsize=(6, 4))
 
-        # ==== 资源与时间日志 ====
         timings_tsv = os.path.join(outs_dir, "timings.tsv")
         with open(timings_tsv, "w") as f:
             f.write(
@@ -490,10 +432,8 @@ def auto_cross_val(data_dir,
                 "gpu_free_begin_mb\tgpu_free_end_mb\tcpu_rss_begin_mb\tcpu_rss_end_mb\n"
             )
 
-        # ==== 进度条（按 epoch）====
         pbar = tqdm(range(1, num_epochs + 1), desc=f"[{val_cancer_type}] Epochs", unit="epoch", leave=True)
         for epoch in pbar:
-            # ---- 采样 epoch 起始资源状态 ----
             if torch.cuda.is_available():
                 torch.cuda.reset_peak_memory_stats()
                 torch.cuda.synchronize()
@@ -502,16 +442,13 @@ def auto_cross_val(data_dir,
 
             ep_t0 = time.time()
 
-            # 训练 1 个 epoch
             train_loss = train_one_epoch(model, train_loader, optimizer, criterion, device)
 
-            # 验证（val & train 上各算一次指标）
             val_loss, val_acc, val_prec, val_rec, val_f1, val_auc, *_ = \
                 evaluate_detailed(model, val_loader, criterion, device)
             _, train_acc, _, _, _, _, *_ = \
                 evaluate_detailed(model, train_loader, criterion, device)
 
-            # 结束计时 & 峰值显存
             if torch.cuda.is_available():
                 torch.cuda.synchronize()
             ep_secs = time.time() - ep_t0
@@ -520,7 +457,6 @@ def auto_cross_val(data_dir,
             cpu_rss_end_mb = cpu_rss_mb()
             lr_now = optimizer.param_groups[0]['lr']
 
-            # 记录
             train_loss_hist.append(train_loss)
             train_acc_hist.append(train_acc)
             val_loss_hist.append(val_loss)
@@ -528,7 +464,6 @@ def auto_cross_val(data_dir,
             val_auc_hist.append(val_auc)
             val_f1_hist.append(val_f1)
 
-            # 进度条尾注
             pbar.set_postfix({
                 "train_loss": f"{train_loss:.4f}",
                 "val_loss":   f"{val_loss:.4f}",
@@ -538,14 +473,12 @@ def auto_cross_val(data_dir,
                 "sec":        f"{ep_secs:.1f}"
             })
 
-            # 控制台打印
             print(
                 f"Epoch {epoch:02d} | Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.4f}"
                 f" | Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.4f} | AUC: {val_auc:.4f} | F1: {val_f1:.4f}"
                 f" | LR: {lr_now:.2e} | Time: {ep_secs:.1f}s"
             )
 
-            # ---- 写入每个 epoch 的资源/时间日志 ----
             with open(timings_tsv, "a") as f:
                 f.write(
                     f"{epoch}\t{ep_secs:.3f}\t{lr_now:.6e}\t"
@@ -559,7 +492,6 @@ def auto_cross_val(data_dir,
 
             scheduler.step(val_loss)
 
-            # *****（保持原行为）每个 epoch 都保存一次验证文件列表 *****
             current_val_filenames = []
             for batch in val_loader:
                 _, _, names = batch
@@ -567,14 +499,12 @@ def auto_cross_val(data_dir,
             with open(os.path.join(outs_dir, f"val_filenames_epoch_{epoch}.txt"), "w") as vf:
                 vf.write("\n".join(current_val_filenames))
 
-            # ***** 仅改“最优选择”：由 AUC→F1（AUC 仅作并列时的次级比较） *****
             improved = (val_f1 > best_f1) or (np.isclose(val_f1, best_f1) and (val_auc > best_auc_tiebreak))
             if improved:
                 best_f1, best_auc_tiebreak = val_f1, val_auc
                 best_epoch = epoch
                 best_state = copy.deepcopy(model.state_dict())
 
-            # 绘制并保存损失与准确率曲线（raw）
             loss_ax.clear()
             loss_ax.plot(range(1, epoch+1), train_loss_hist, label='Training Loss')
             loss_ax.plot(range(1, epoch+1), val_loss_hist,   label='Validation Loss')
@@ -587,14 +517,12 @@ def auto_cross_val(data_dir,
             acc_ax.set_xlabel('Epoch'); acc_ax.set_ylabel('Accuracy'); acc_ax.legend(); acc_ax.grid(True)
             acc_fig.savefig(os.path.join(outs_dir, "accuracy_curve_raw.png"), dpi=150)
 
-            # >>> 新增：保存“最后 K 个 epoch”的模型权重 + 清单
             if epoch >= (num_epochs - save_last_k + 1):
                 ep_ckpt = os.path.join(outs_dir, f"model_epoch_{epoch:03d}.pth")
                 torch.save(model.state_dict(), ep_ckpt)
                 with open(lastk_manifest, "a") as mf:
                     mf.write(f"epoch={epoch}\t{os.path.basename(ep_ckpt)}\n")
 
-        # ==== 保存每个 epoch 的指标 ====
         epoch_tsv = os.path.join(outs_dir, "epoch_metrics.tsv")
         with open(epoch_tsv, 'w') as f:
             f.write("epoch\ttrain_loss\ttrain_acc\tval_loss\tval_acc\tval_auc\tval_f1\n")
@@ -606,7 +534,6 @@ def auto_cross_val(data_dir,
                     f"\t{val_auc_hist[e]:.6f}\t{val_f1_hist[e]:.6f}\n"
                 )
 
-        # ==== 平滑并保存曲线 ====
         window = 5
         train_s = moving_average(train_loss_hist, window)
         val_s   = moving_average(val_loss_hist, window)
@@ -632,19 +559,17 @@ def auto_cross_val(data_dir,
         plt.xlabel('Epoch'); plt.ylabel('Accuracy'); plt.legend(); plt.grid(True)
         plt.savefig(os.path.join(outs_dir, "accuracy_curve_smoothed.png")); plt.close()
 
-        # ==== 保存最优模型并评估（Best by F1） ====
-        assert best_state is not None, "未产生最优状态，请检查训练/验证流程。"
+        assert best_state is not None, "No best state was produced; check the training and validation flow."
         torch.save(best_state, os.path.join(outs_dir, "best_model.pth"))
         model.load_state_dict(best_state)
         val_loss, val_acc, val_prec, val_rec, val_f1, val_auc, val_cm, gt, probs, _ = \
             evaluate_detailed(model, val_loader, criterion, device)
-        print(f"\n*** 验证集 {val_cancer_type} 评估（Best@Epoch {best_epoch} by F1）***")
+        print(f"\n*** Validation {val_cancer_type} (best F1 at epoch {best_epoch}) ***")
         print(
             f"Loss: {val_loss:.4f}, Acc: {val_acc:.4f}, Prec: {val_prec:.4f},"
             f" Rec: {val_rec:.4f}, F1: {val_f1:.4f}, AUC: {val_auc:.4f}"
         )
 
-        # ==== 写入 summary ====
         record = [
             val_cancer_type,
             str(best_epoch),
@@ -657,7 +582,6 @@ def auto_cross_val(data_dir,
         with open(summary_tsv, 'a') as f:
             f.write("\t".join(record) + "\n")
 
-        # ==== 保存 ROC 数据和图 ====
         fpr, tpr, thresholds = roc_curve(gt, probs)
         df = pd.DataFrame({'fpr': fpr, 'tpr': tpr, 'thresholds': thresholds})
         df.to_csv(os.path.join(outs_dir, 'roc.tsv'), sep='\t', index=False)
@@ -668,7 +592,6 @@ def auto_cross_val(data_dir,
         plt.savefig(os.path.join(outs_dir, "roc_val.png"))
         plt.close()
 
-        # ==== 附：在 timings.tsv 末尾追加 TOTAL 行（统计用时） ====
         with open(timings_tsv, "a") as f:
             f.write("TOTAL\tNA\tNA\tNA\tNA\tNA\tNA\tNA\tNA\n")
 
@@ -687,14 +610,7 @@ def plot_metrics_and_roc(root_dir,
                          metrics_filename='epoch_metrics.tsv',
                          roc_filename='roc.tsv',
                          save_path=None):
-    """
-    在一个 2×N 子图里：
-      - 第一行：train/val loss
-      - 第二行：ROC（只标 'ROC'，图例在右下，AUC 框在图例上方）
-      - 序号标在子图左上角外侧
-      - 英文字体为 Times New Roman
-    """
-    # 全局样式
+    """Plot train/validation loss and ROC panels for each cancer type."""
     plt.rcParams.update({
         'font.size':       12,
         'axes.titlesize':  14,
@@ -710,11 +626,9 @@ def plot_metrics_and_roc(root_dir,
 
     n = len(cancer_types)
     fig, axes = plt.subplots(2, n, figsize=(4 * n, 8))
-    # 留出外侧空间用于序号
     fig.subplots_adjust(left=0.12, top=0.92, wspace=0.3, hspace=0.4)
 
     for col, ct in enumerate(cancer_types):
-        # ——— Loss 子图 ———
         ax0 = axes[0, col]
         ax0.text(-0.05, 1.02, f'({letters[label_counter]})',
                  transform=ax0.transAxes,
@@ -734,7 +648,6 @@ def plot_metrics_and_roc(root_dir,
             ax0.text(0.5, 0.5, 'No data', ha='center', va='center')
         ax0.set_title(f'{ct} — Loss')
 
-        # ——— ROC 子图 ———
         ax1 = axes[1, col]
         ax1.text(-0.05, 1.02, f'({letters[label_counter]})',
                  transform=ax1.transAxes,
@@ -747,7 +660,6 @@ def plot_metrics_and_roc(root_dir,
             df_roc = pd.read_csv(path1, sep='\t')
             fpr, tpr = df_roc['fpr'].values, df_roc['tpr'].values
 
-            # 只标 'ROC'
             ax1.plot(fpr, tpr, label='ROC')
             ax1.plot([0, 1], [0, 1], '--', color='gray', label='random')
 
@@ -773,13 +685,12 @@ def plot_metrics_and_roc(root_dir,
     plt.tight_layout()
     if save_path:
         plt.savefig(save_path, dpi=300)
-        print(f"已保存组合图到 {save_path}")
+        print(f"Saved combined plot to {save_path}")
     else:
         plt.show()
 
 
 if __name__ == '__main__':
-    # 1) 配置
     k_runs = 5
     # cancer_list = ['LAML','GBM','UCEC','SARC','BRCA','BLCA','LUSC','HNSC','LUAD','ESCA','CESC','KICH','KIRC','KIRP','COAD','ACC','LGG','LIHC','CHOL','DLBC']
     # cancer_list = ['LAML','GBM','UCEC','SARC','BRCA','BLCA','LUSC','HNSC','LUAD','ESCA','KIRC','ACC', 'LGG', 'LIHC']
@@ -791,8 +702,7 @@ if __name__ == '__main__':
     session_dirs = []
     mut_type = "amp"
 
-    # 2) 生成 k 个随机种子
-    seeds = [530512]  # 你也可以改回 np.random.randint(...)
+    seeds = [530512]
     for se in seeds:
         print(f"\n===== Run with seed {se} =====")
         if mut_type == "amp":
@@ -816,17 +726,15 @@ if __name__ == '__main__':
             continue
         combined_png = os.path.join(output_dir, "combined_metrics_and_roc.png")
         session_dirs.append(out_dir)
-        # 2.3 将 seed 记录到 hyperparameters.txt
         with open(os.path.join(out_dir, "hyperparameters.txt"), 'a') as f:
             f.write(f"seed: {se}\n")
-    print("✅ 所有 runs 完成，并已生成")
+    print("All runs completed.")
 
-    # —— 训练全部结束后：对每个 session_dir 做多指标 best 导出与 t-SNE ——
     for sd in session_dirs:
-        print(f"\n=== 导出多指标 best models @ {sd} ===")
+        print(f"\n=== Exporting best models by metric @ {sd} ===")
         export_multi_best_models(sd, criteria=('auc', 'f1', 'valloss', 'avg'))
 
-        print(f"=== 构建基于多 best 的 t-SNE @ {sd} ===")
+        print(f"=== Building multi-model t-SNE @ {sd} ===")
         build_tsne_for_multi_best(
             session_dir=sd,
             data_dir=f"../GeneratedSamples_{mut_type}_compressed_baseline_improved_5120/",
@@ -834,4 +742,3 @@ if __name__ == '__main__':
             target_cancer_types=cancer_list,
             batch_size=32, perplexity=30, n_iter=1000, random_state=42
         )
-

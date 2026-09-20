@@ -8,43 +8,35 @@ import pandas as pd
 import numpy as np
 import importlib.util
 from typing import Optional, Dict, Any
-from collections.abc import Sequence  # 用于判断序列类型
+from collections.abc import Sequence
 
 
-# ========== 可配置变量 ==========
+# Conversion settings.
 GLOBAL_CONFIG_PATH = "./config.yaml"
 INPUT_CENTERS_PY  = "./aaa.py"
 OUTPUT_PATH       = "./baseline_o.yaml"
 START_COL_NAME    = None
 INCLUDE_DEBUG     = True
-# 自动去重容差（近似比较时 |a-b| <= tol 视为重复）
+# Numeric values within this tolerance are treated as duplicates.
 DEDUP_TOL         = 1e-6
-# =================================
 
 
 def load_global_config(path: Optional[str]) -> Dict[str, Any]:
-    print(f"[DEBUG] 尝试加载全局配置: {path}")
+    print(f"[DEBUG] Loading global configuration: {path}")
     if path is None or not os.path.exists(path):
-        raise FileNotFoundError(f"未找到全局配置文件: {path!r}")
+        raise FileNotFoundError(f"Global configuration not found: {path!r}")
     with open(path, "r", encoding="utf-8") as f:
         cfg = yaml.safe_load(f) or {}
-    print(f"[DEBUG] 读取到的 config.yaml 内容: {cfg}")
+    print(f"[DEBUG] Loaded config.yaml: {cfg}")
     required = ["DATA_BASE_DIR", "FILE_EXTENSION"]
     missing = [k for k in required if k not in cfg]
     if missing:
-        raise KeyError(f"缺少必要键: {missing}")
+        raise KeyError(f"Missing required keys: {missing}")
     return cfg
 
 
-# ====================== TYPE_CENTERS 归一化与去重 ======================
-
 def _as_dict_type_centers(tc_raw):
-    """
-    把 TYPE_CENTERS 归一化为 dict。
-    允许:
-      - 直接是 dict
-      - 是 tuple/list，里面包含一个 dict（例如末尾多逗号导致的 ({...},)）
-    """
+    """Normalize TYPE_CENTERS from a dict or a sequence containing a dict."""
     if isinstance(tc_raw, dict):
         return tc_raw
     if isinstance(tc_raw, Sequence) and not isinstance(tc_raw, (str, bytes)):
@@ -52,18 +44,14 @@ def _as_dict_type_centers(tc_raw):
             if isinstance(item, dict):
                 return item
     raise TypeError(
-        f"TYPE_CENTERS 必须是 dict，或包含 dict 的 tuple/list；当前类型: {type(tc_raw).__name__}"
+        f"TYPE_CENTERS must be a dict or a sequence containing one; got {type(tc_raw).__name__}"
     )
 
 
 def _dedup_numeric_list_keep_order(seq, tol=1e-6):
-    """
-    对包含数字(或可转成数字)的列表做去重，保留顺序。
-    - 浮点数使用近似比较：|a-b| <= tol 认为重复
-    - 不能转为 float 的元素使用严格相等比较
-    """
+    """Deduplicate numeric-like values while preserving their order."""
     out = []
-    seen = []  # 存放对比基准(尽量转为 float)
+    seen = []
     for x in seq or []:
         try:
             xf = float(x)
@@ -90,9 +78,7 @@ def _dedup_numeric_list_keep_order(seq, tol=1e-6):
 
 
 def _dedup_type_centers_inplace(tc: dict, tol=1e-6, verbose=True):
-    """
-    就地去重 TYPE_CENTERS 中各 chr 的 pos/neg。
-    """
+    """Deduplicate positive and negative centers in place."""
     for st, chroms in tc.items():
         if not isinstance(chroms, dict):
             continue
@@ -106,19 +92,16 @@ def _dedup_type_centers_inplace(tc: dict, tol=1e-6, verbose=True):
             neg_dedup = _dedup_numeric_list_keep_order(neg, tol=tol)
 
             if verbose and (len(pos_dedup) != len(pos) or len(neg_dedup) != len(neg)):
-                print(f"[INFO] 去重 {st} {chrom}: "
+                print(f"[INFO] Deduplicated {st} {chrom}: "
                       f"pos {len(pos)} -> {len(pos_dedup)}, "
                       f"neg {len(neg)} -> {len(neg_dedup)}")
 
             pn["pos"] = pos_dedup
             pn["neg"] = neg_dedup
-# =====================================================================
-
-
 def load_type_centers_from_py(py_path: str) -> Dict[str, Any]:
-    print(f"[DEBUG] 尝试加载输入文件: {py_path}")
+    print(f"[DEBUG] Loading input file: {py_path}")
     if not os.path.exists(py_path):
-        raise FileNotFoundError(f"未找到输入文件: {py_path!r}")
+        raise FileNotFoundError(f"Input file not found: {py_path!r}")
 
     spec = importlib.util.spec_from_file_location("centers_module", py_path)
     mod = importlib.util.module_from_spec(spec)
@@ -126,18 +109,16 @@ def load_type_centers_from_py(py_path: str) -> Dict[str, Any]:
     spec.loader.exec_module(mod)
 
     if not hasattr(mod, "TYPE_CENTERS"):
-        raise KeyError("输入文件未定义 TYPE_CENTERS")
+        raise KeyError("The input file does not define TYPE_CENTERS")
 
     tc_raw = getattr(mod, "TYPE_CENTERS")
-    print(f"[DEBUG] 读取到的 TYPE_CENTERS 原始类型: {type(tc_raw).__name__}")
+    print(f"[DEBUG] Raw TYPE_CENTERS type: {type(tc_raw).__name__}")
 
-    # 归一化: 支持 dict 或 (dict,) 等
     tc = _as_dict_type_centers(tc_raw)
 
-    # 自动去重（可调 tol）
     _dedup_type_centers_inplace(tc, tol=DEDUP_TOL, verbose=True)
 
-    print(f"[DEBUG] 归一化并去重后 TYPE_CENTERS keys: {list(tc.keys())}")
+    print(f"[DEBUG] Normalized TYPE_CENTERS keys: {list(tc.keys())}")
     return {"TYPE_CENTERS": tc}
 
 
@@ -147,29 +128,29 @@ def merge_type_chrom_data(base_dir: str,
                           start_col_name: Optional[str] = None) -> Dict[str, Dict[str, Any]]:
     type_dir = os.path.join(base_dir, sample_type)
     file_list = glob.glob(os.path.join(type_dir, f"*{file_ext}"))
-    print(f"[DEBUG] {sample_type} 在 {type_dir} 找到 {len(file_list)} 个文件: {file_list}")
+    print(f"[DEBUG] Found {len(file_list)} {sample_type} files in {type_dir}: {file_list}")
 
     chrom_frames = {}
     for fp in file_list:
         try:
             df = pd.read_csv(fp, sep="\t")
         except Exception as e:
-            print(f"[WARN] 读取失败: {fp} -> {e}")
+            print(f"[WARN] Failed to read {fp}: {e}")
             continue
 
-        print(f"[DEBUG] 读取 {fp} 成功, 列: {list(df.columns)}, 行数: {len(df)}")
+        print(f"[DEBUG] Loaded {fp}; columns={list(df.columns)}, rows={len(df)}")
 
         if "chr" not in df.columns:
-            print(f"[WARN] 文件缺少 'chr' 列, 跳过: {fp}")
+            print(f"[WARN] Skipping {fp}; missing column 'chr'")
             continue
 
         if start_col_name and start_col_name in df.columns:
             start_series = pd.to_numeric(df[start_col_name], errors="coerce")
-            print(f"[DEBUG] 使用列 {start_col_name} 作为 start")
+            print(f"[DEBUG] Using {start_col_name} as the start column")
         else:
             first_col = df.columns[0]
             start_series = pd.to_numeric(df[first_col], errors="coerce")
-            print(f"[DEBUG] 使用第一列 {first_col} 作为 start")
+            print(f"[DEBUG] Using first column {first_col} as start")
 
         df = df.copy()
         df["__start_bp__"] = start_series
@@ -183,11 +164,11 @@ def merge_type_chrom_data(base_dir: str,
         starts = df_chrom["__start_bp__"].astype(float).values
         valid = ~np.isnan(starts)
         if not valid.any():
-            print(f"[WARN] {sample_type} {chrom} 的 start 均为 NaN, 跳过")
+            print(f"[WARN] Skipping {sample_type} {chrom}; all start values are NaN")
             continue
         df_chrom = df_chrom.loc[valid].reset_index(drop=True)
         starts = starts[valid]
-        print(f"[DEBUG] {sample_type} {chrom} 合并后行数: {len(df_chrom)}")
+        print(f"[DEBUG] Merged {sample_type} {chrom}; rows={len(df_chrom)}")
         merged[chrom] = {"df": df_chrom, "starts": starts}
 
     return merged
@@ -211,19 +192,19 @@ def convert_centers_to_indices(global_cfg: Dict[str, Any],
     if include_debug:
         out["DEBUG_META"] = {}
 
-    print(f"[DEBUG] 将处理 {len(type_centers)} 个类型: {list(type_centers.keys())}")
+    print(f"[DEBUG] Processing {len(type_centers)} types: {list(type_centers.keys())}")
 
     for sample_type, chrom_map in type_centers.items():
-        print(f"[INFO] 处理类型: {sample_type}")
+        print(f"[INFO] Processing type: {sample_type}")
         merged = merge_type_chrom_data(base_dir, sample_type, file_ext, start_col_name=start_col_name)
         out["TYPE_CENTERS"].setdefault(sample_type, {})
         if include_debug:
             out["DEBUG_META"].setdefault(sample_type, {})
 
         for chrom, lists in chrom_map.items():
-            print(f"[DEBUG] 处理 {sample_type} {chrom}, pos 数量={len(lists.get('pos', []))}, neg 数量={len(lists.get('neg', []))}")
+            print(f"[DEBUG] Processing {sample_type} {chrom}; pos={len(lists.get('pos', []))}, neg={len(lists.get('neg', []))}")
             if chrom not in merged:
-                print(f"[WARN] 无数据: {sample_type} {chrom}, 输出空列表")
+                print(f"[WARN] No data for {sample_type} {chrom}; writing empty lists")
                 out["TYPE_CENTERS"][sample_type][chrom] = {"pos": [], "neg": []}
                 if include_debug:
                     out["DEBUG_META"][sample_type][chrom] = {"pos": [], "neg": []}
@@ -255,13 +236,9 @@ def convert_centers_to_indices(global_cfg: Dict[str, Any],
     return out
 
 
-# ====================== 新增：打印统计 ======================
-
 def report_type_centers_counts(type_centers: dict):
-    """
-    打印每个 cancer_type 的 pos/neg 数量和总数
-    """
-    print("\n=== 各癌种位点数量统计（去重后） ===")
+    """Print positive, negative, and total center counts by cancer type."""
+    print("\n=== Center counts by cancer type after deduplication ===")
     for cancer_type, chroms in type_centers.items():
         pos_count = sum(len(v.get("pos", [])) for v in chroms.values())
         neg_count = sum(len(v.get("neg", [])) for v in chroms.values())
@@ -269,14 +246,10 @@ def report_type_centers_counts(type_centers: dict):
         print(f"{cancer_type:10s} -> pos: {pos_count:4d}, neg: {neg_count:4d}, total: {total:4d}")
 
 
-# ==========================================================
-
-
 def main():
     global_cfg = load_global_config(GLOBAL_CONFIG_PATH)
     centers_cfg = load_type_centers_from_py(INPUT_CENTERS_PY)
 
-    # 新增：打印每个 cancer_type 的 pos/neg/总数（已去重后的数据）
     report_type_centers_counts(centers_cfg["TYPE_CENTERS"])
 
     result = convert_centers_to_indices(
@@ -288,7 +261,7 @@ def main():
 
     with open(OUTPUT_PATH, "w", encoding="utf-8") as f:
         yaml.safe_dump(result, f, sort_keys=False, allow_unicode=True)
-    print(f"[OK] 已写出: {OUTPUT_PATH}")
+    print(f"[OK] Wrote: {OUTPUT_PATH}")
 
 
 if __name__ == "__main__":

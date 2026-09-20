@@ -60,7 +60,7 @@ class TSVDataset(Dataset):
         # Exclude files listed in txt (do NOT change val set)
         if exclude_txt is not None and mode != 'val':
             exclude_set = self._load_exclude_set(exclude_txt)
-            # 比对 basename；如果 txt 里给的是完整路径也兼容一下
+            # Accept either basenames or full paths in the exclusion file.
             paths = [
                 p for p in paths
                 if (os.path.basename(p) not in exclude_set) and (p not in exclude_set)
@@ -82,7 +82,6 @@ class TSVDataset(Dataset):
                 s = line.strip()
                 if not s:
                     continue
-                # 允许txt里出现路径或纯文件名：统一都放进去
                 exclude.add(s)
                 exclude.add(os.path.basename(s))
         return exclude
@@ -92,7 +91,7 @@ class TSVDataset(Dataset):
 
     def __getitem__(self, idx):
         file_path = self.file_paths[idx]
-        sample = TSVDataset.parse_file(file_path)  # 用静态方法（你现在的实现是静态的）
+        sample = TSVDataset.parse_file(file_path)
         if sample is None:
             raise ValueError(f"Failed to parse sample: {file_path}")
 

@@ -7,7 +7,7 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 mut="del"
 host="se"
-# === 配置参数（写死在此处） ===
+# Pipeline variant selection.
 if mut=="amp":
     if host=="local":
         BASE_INPUT_DIR = os.path.join(PROJECT_ROOT, 'bin_with_case')
@@ -22,14 +22,10 @@ elif mut=="del":
     else:
         BASE_INPUT_DIR = os.path.join(PROJECT_ROOT, 'bin_with_case_del')
         OUTPUT_DIR     = os.path.join(PROJECT_ROOT, 'bin_with_case_del_compressed_40')
-K = 40  # 保留均值最高的前 K 列
-# ==============================
+K = 40
 
 def detect_sep(file_path: str) -> str:
-    """
-    自动识别文件分隔符：
-    读取前 2048 字节，用 csv.Sniffer 来猜分隔符，fallback 到 '\t'
-    """
+    """Detect the delimiter from the first 2048 bytes, defaulting to tabs."""
     with open(file_path, 'r', newline='') as f:
         sample = f.read(2048)
     try:
@@ -40,24 +36,19 @@ def detect_sep(file_path: str) -> str:
 
 
 def process_file(file_path: str, output_path: str, k: int, sep: str = '\t') -> None:
-    """
-    处理单个文件（支持 .txt/.tsv 任意分隔符）：
-      1) 按 sep 读取
-      2) 提取前3列（meta）、最后1列（suffix），中间当做数值列
-      3) 如中间列不足 k，则补齐全为 2 的列
-      4) 计算均值，选出前 k 列，剩余列循环分配给这 k 列并取平均
-      5) 输出结构同原来，但中间只留 k 列，分隔符固定为 '\t'
+    """Compress sample columns to ``k`` while preserving metadata and suffix.
+
+    The first three columns are metadata and the last column is a suffix.
+    Missing feature columns are padded with diploid value 2. Remaining columns
+    are assigned round-robin to the highest-mean anchors and averaged.
     """
     df = pd.read_csv(file_path, sep=sep)
 
-    # 1. 元信息列和 suffix 列
-    meta_cols   = df.columns[:3].tolist()    # 可改 N_META
-    suffix_cols = df.columns[-1:].tolist()   # 可改 N_SUFFIX
+    meta_cols   = df.columns[:3].tolist()
+    suffix_cols = df.columns[-1:].tolist()
 
-    # 2. 中间原始数据列
     data_cols = df.columns[3:-1].tolist()
 
-    # 3. 补齐不足 k 列
     if len(data_cols) < k:
         num_pad = k - len(data_cols)
         pad_cols = [f'pad_{i+1}' for i in range(num_pad)]
@@ -65,21 +56,17 @@ def process_file(file_path: str, output_path: str, k: int, sep: str = '\t') -> N
             df[col] = 2
         data_cols.extend(pad_cols)
 
-    # 4. 计算均值并选前 k
     means    = df[data_cols].mean()
     top_cols = means.nlargest(k).index.tolist()
 
-    # 5. 剩余列循环分配给 top_cols
     rem_cols    = [c for c in data_cols if c not in top_cols]
     assignments = {col: top_cols[i % k] for i, col in enumerate(rem_cols)}
 
-    # 6. 按组合并并取平均
     merged_cols = {}
     for top in top_cols:
         group = [top] + [c for c, tgt in assignments.items() if tgt == top]
         merged_cols[top] = df[group].sum(axis=1) / len(group)
 
-    # 7. 组装输出
     df_out = pd.concat([
         df[meta_cols],
         pd.DataFrame(merged_cols),
@@ -87,7 +74,6 @@ def process_file(file_path: str, output_path: str, k: int, sep: str = '\t') -> N
     ], axis=1)
     df_out = df_out[meta_cols + top_cols + suffix_cols]
 
-    # 8. 写入 TSV（固定 '\t' ）
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     df_out.to_csv(output_path, sep='\t', index=False)
 
@@ -96,7 +82,6 @@ def main():
     VALID_EXTS = ('.txt', '.tsv')
 
     for root, dirs, files in os.walk(BASE_INPUT_DIR):
-        # 如果也想处理 BASE_INPUT_DIR 本身，就去掉这行判断
         if root == BASE_INPUT_DIR:
             continue
 
