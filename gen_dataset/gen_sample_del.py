@@ -43,7 +43,7 @@ def load_config(global_path: Optional[str] = None,
     if type_centers_path is None:
         type_centers_path = os.environ.get("GENSAMPLES_TYPE_CENTERS")
     if type_centers_path is None:
-        type_centers_path = _first_existing(["./type_centers_index_del.yaml"])
+        type_centers_path = _first_existing(["./type_centers_del.yaml"])
     if type_centers_path:
         with open(type_centers_path, "r", encoding="utf-8") as f:
             centers_cfg = yaml.safe_load(f) or {}

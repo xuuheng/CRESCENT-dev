@@ -218,7 +218,7 @@ The newest default files are not the real pan-cancer training set:
 
 - `type_centers_index.yaml`: one type named `RUBIC5`, 45 positive and 45 negative
   centers;
-- `type_centers_index_del.yaml`: one type named `RUBIC5`, 54 positive and 46
+- `type_centers_del.yaml`: one type named `RUBIC5`, 54 positive and 46
   negative centers;
 - `rubic_sim_a.yaml`: one type named `RUBIC1`, 45 positive and 38 negative
   centers.
@@ -475,7 +475,7 @@ dictionaries are removed from the conceptual pipeline.
 
 ### Deletion-specific limitation
 
-The newest external `type_centers_index_del.yaml` is simulation-only (`RUBIC5`).
+The external `type_centers_del.yaml` is simulation-only (`RUBIC5`).
 The repository does not contain an obviously final, external, 20-project real
 deletion center YAML. Real deletion labels are distributed among older embedded
 generator dictionaries and generated artifacts. Therefore, a scientifically

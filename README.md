@@ -33,13 +33,12 @@ Amp sampling currently uses `50x40`, `250x40`, and `2000x40` windows. Del sampli
 
 ## Label provenance
 
-There is no single unambiguous final label file in the original tree, so candidates are preserved instead of discarded:
+The archive keeps one label manifest for each mutation pipeline:
 
-- `type_centers_index_0911improved.yaml`: best-supported late real-cohort amplification candidate.
-- `type_centers_index_0908.yaml`, `type_centers_index_0912.yaml`, and `type_centers_index_L.yaml`: alternative real-cohort snapshots.
-- `center_position.yaml`: coordinate-based 20-project labels; convert with `centers_coord_to_index.py` when needed.
-- `type_centers_index.yaml` and `type_centers_index_del.yaml`: current generator defaults, but both contain `RUBIC5` simulation labels.
-- `rubic_sim_a.yaml`: for stimulation dataset provided by `RUBIC`.
+- `type_centers_index.yaml`: amplification labels and the amplification generator default.
+- `type_centers_del.yaml`: deletion labels and the deletion generator default.
+
+`center_position.yaml` retains the coordinate-based 20-project annotations and can be converted with `centers_coord_to_index.py`. `rubic_sim_a.yaml` contains the simulation dataset labels provided by RUBIC.
 
 For a chosen label file, set `GENSAMPLES_TYPE_CENTERS` before running a generator. Set `GENSAMPLES_CONFIG` to select the amp or del configuration.
 
@@ -50,7 +49,7 @@ pip install -r requirements.txt
 
 cd gen_dataset
 GENSAMPLES_CONFIG=./config.yaml \
-GENSAMPLES_TYPE_CENTERS=./type_centers_index_0911improved.yaml \
+GENSAMPLES_TYPE_CENTERS=./type_centers_index.yaml \
 python gen_sample_amp.py
 ```
 
@@ -66,5 +65,4 @@ python auto_cross_ct_val.py
 ```
 
 Please note that `auto_cross_ct_val.py` runs with a target TCGA-project as the held-out dataset ,it contains configuration in the bottom block. If you want to run on a specific project or try different configuration, change configuration accordingly.
-
 

@@ -82,7 +82,7 @@ del route
     -> preprocess/Version0209/gen_bin_del.cpp
        (CN < 2 only; diploid baseline 2)
     -> bin_with_case_del -> bin_with_case_del_compressed[_40/_80]
-    -> gen_dataset/config_del.yaml + type_centers_index_del.yaml
+    -> gen_dataset/config_del.yaml + type_centers_del.yaml
     -> gen_dataset/gen_sample_del.py (or gen_sample_del_old.py)
     -> GeneratedSamples_del_...
     -> shared training/model code
@@ -129,7 +129,7 @@ Column compression       Shared preprocess/compress.py: select the 40 globally h
                          them, and average each group. If fewer than 40 columns, pad 2.
                          Directory selection differs by mut/host.
 
-Center annotations       type_centers_index*.yaml        type_centers_index_del.yaml
+Center annotations       type_centers_index*.yaml        type_centers_del.yaml
                          (amp-specific labels)            (del-specific labels)
 
 Allowed center format    Current amp generator requires  del generator accepts either
