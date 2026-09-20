@@ -1,17 +1,17 @@
 # CRESCENT-dev
 
-Development and training archive for `CRESCENT`, a deep-learning framework for detecting recurrent copy-number amplifications (`amp`) and deletions (`del`). This repository collects the latest coherent preprocessing, labeled-sample generation, dataset loading, model, and leave-one-project-out validation code found in the original development tree.
+Development and training archive for `CRESCENT`, a deep-learning framework for detecting recurrent copy-number amplifications (`amp`) and deletions (`del`). This repository contains one documented preprocessing, sample-generation, model-training, and leave-one-project-out validation pipeline.
 
 If you are primarily interested in using **CRESCENT** for inference, please refer to [**CRESCENT**](https://github.com/BioThinkLab/CRESCENT), which provides a streamlined and performance-optimized implementation with substantially lower RAM and storage requirements, making it more suitable for use on personal computers.
 
-This repository contains the complete research codebase, including the training, validation, and evaluation pipelines. In addition to the final implementation, some modules also retain experimental variants explored during development. These are included for completeness and reproducibility of the research process, and may not represent the recommended or best-performing configurations.
+This repository contains the development training, validation, and evaluation pipeline. Historical variants are listed briefly at the end of the training-pipeline document for experiment provenance.
 
 ## Included
 
 - `Data/merged_dataframe/`: merged CNA segment tables for 20 TCGA cancer projects.
 - `Data/ChromosomeData2025/`: GRCh38 chromosome-arm ranges required by the amplification preprocessing path.
-- `preprocess/`: focal amplification/deletion bin construction, 40-column compression, and the alternative automatic label selector.
-- `gen_dataset/`: `config.yaml`, `config_del.yaml`, current amp/del generators, coordinate conversion, and all plausible center-label manifests retained for provenance.
+- `preprocess/`: focal amplification/deletion bin construction and 40-column compression.
+- `gen_dataset/`: amp/del configurations, label manifests, and sample generators.
 - `Model/`: the shared multi-scale CNN/attention model, TSV dataset class, training/evaluation helpers, and leave-one-project-out validation driver.
 - `docs/`: detailed pipeline reconstruction and amp/del comparison reports.
 
@@ -38,8 +38,6 @@ The archive keeps one label manifest for each mutation pipeline:
 - `type_centers_index.yaml`: amplification labels and the amplification generator default.
 - `type_centers_del.yaml`: deletion labels and the deletion generator default.
 
-`center_position.yaml` retains the coordinate-based 20-project annotations and can be converted with `centers_coord_to_index.py`. `rubic_sim_a.yaml` contains the simulation dataset labels provided by RUBIC.
-
 For a chosen label file, set `GENSAMPLES_TYPE_CENTERS` before running a generator. Set `GENSAMPLES_CONFIG` to select the amp or del configuration.
 
 ```bash
@@ -64,5 +62,4 @@ cd Model
 python auto_cross_ct_val.py
 ```
 
-Please note that `auto_cross_ct_val.py` runs with a target TCGA-project as the held-out dataset ,it contains configuration in the bottom block. If you want to run on a specific project or try different configuration, change configuration accordingly.
-
+`Model/auto_cross_ct_val.py` is the training and validation entry point. Its bottom configuration block selects the mutation type, generated-sample directory, held-out TCGA projects, and random seeds.

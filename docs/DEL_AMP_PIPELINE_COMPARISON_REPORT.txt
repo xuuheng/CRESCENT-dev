@@ -1,454 +1,197 @@
-CRESCENT PROJECT: SYSTEMATIC COMPARISON OF THE "del" AND "amp" PIPELINES
-===============================================================================
+CRESCENT: AMP AND DEL PIPELINE COMPARISON
+=========================================
 
-Report date: 2026-09-15
-Scope: read-only analysis of this repository plus the Materials and Methods of
-"CRESCENT: a deep learning framework with multi-scale attention for detecting
-recurrent copy number alterations." No source code was changed and this is not
-intended as a bug audit.
+Scope
+-----
 
-Primary article source:
-https://pmc.ncbi.nlm.nih.gov/articles/PMC13089434/
-Direct paper copy:
-https://fengslab.com/data/crescent.pdf
+This report describes the amplification (amp) and deletion (del) branches in
+the CRESCENT-dev pipeline. Both branches feed the same dataset class, model, and
+leave-one-project-out training script:
+
+  Model/auto_cross_ct_val.py
 
 
-1. EXECUTIVE SUMMARY
---------------------
+1. SHARED END-TO-END PIPELINE
+-----------------------------
 
-The two pipelines are separate mainly BEFORE training, when chromosome matrices
-and labeled multi-scale samples are constructed. Once samples have been written,
-both mutation types use the same dataset parser, the same multi-branch CNN and
-attention architecture, the same binary loss, and essentially the same training
-logic. In the training functions, the `mut` value mostly selects the input/output
-directory; it does not change the model computation.
-
-The central biological/data distinction is:
-
-* amp preserves the ordinary copy-number landscape in its matrix (after removal
-  of arm-level records in the focal preprocessing path inspected here). Values
-  above 2 remain high amplification signal, but values at or below 2 can also be
-  present.
-* del constructs a deletion-only landscape. Only records with Copy_Number < 2
-  define bins and update values. Each sample starts from diploid value 2 and is
-  reduced by 2 - Copy_Number. Amplification records are therefore excluded from
-  the deletion representation.
-
-The article explicitly explains the deletion transformation: copy-number values
-greater than 2 are ignored and the remaining values are represented relative to
-the diploid state. This prevents relatively sparse deletion patterns from being
-masked by the wider numeric range of amplifications.
-
-The intended multi-scale windows also differ because the empirical CNA-length
-distributions differ:
-
-  Article amp: 50x40, 100x40, 2000x40
-  Article del: 20x40,  50x40,  400x40
-
-The checked-in current YAML agrees exactly for del, but the current amp YAML has
-50x40, 250x40, 2000x40. Older/candidate amp scripts still contain the article's
-50/100/2000 definition. Existing local deletion samples contain yet another
-historical set, 50x40, 100x40, 500x40. Training discovers shapes from the first
-sample at runtime, so the generated files—not the mutation name—ultimately decide
-the model's branch input sizes.
-
-
-2. END-TO-END FLOW
-------------------
-
-Common starting point
   Data/merged_dataframe/merged_dataframe_<CANCER>.tsv
-    -> per-chromosome bin matrices
-    -> reduce/pad patient columns to a fixed width (normally 40)
-    -> select positive and negative center bins from mutation-specific YAML
-    -> extract three centered genomic windows
-    -> write one labeled TSV per center
-    -> TSVDataset parses the three matrices
-    -> shared CNN branches + cross-branch attention + binary classifier
-    -> cross-validation, metrics, checkpoints, inference/mapping
-
-amp route
-  merged CNA data
-    -> focal/arm filtering and general CN binning
-    -> bin_with_case_amp_compressed (or experiment-specific variants)
-    -> gen_dataset/config.yaml + type_centers_index*.yaml
-    -> gen_dataset/gen_sample_amp.py (or an older experiment generator)
-    -> GeneratedSamples_amp_...
-    -> shared training/model code
-    -> experimental/amp/...
-
-del route
-  merged CNA data
-    -> preprocess/Version0209/gen_bin_del.cpp
-       (CN < 2 only; diploid baseline 2)
-    -> bin_with_case_del -> bin_with_case_del_compressed[_40/_80]
-    -> gen_dataset/config_del.yaml + type_centers_del.yaml
-    -> gen_dataset/gen_sample_del.py (or gen_sample_del_old.py)
-    -> GeneratedSamples_del_...
-    -> shared training/model code
-    -> experimental/del/...
+      -> mutation-specific chromosome matrices
+      -> 40-column patient-axis compression
+      -> mutation-specific center labels
+      -> three-scale labeled TSV samples
+      -> Model/utils/Dataset.py
+      -> Model/Models.py
+      -> Model/utils/train.py and Model/utils/evaluate.py
+      -> Model/auto_cross_ct_val.py
+      -> leave-one-project-out results in experimental/<mutation>/
 
 
-3. DETAILED DIFFERENCE TABLE
-----------------------------
-
-Stage / concern          amp pipeline                    del pipeline
------------------------  ------------------------------  ------------------------------
-Biological target        Recurrent copy-number gains     Recurrent copy-number losses
-
-Raw source               Same merged allele-specific     Same merged allele-specific
-                         total CN segment tables          total CN segment tables
-
-Event filtering          General focal bin path keeps    Only Copy_Number < 2 records
-                         non-arm-level segments; it       create bin boundaries and
-                         does not filter solely to CN>2   contribute values. CN >= 2,
-                         in the inspected bin builder.    including amplification, is
-                                                         ignored.
-
-Bin boundaries           Start/end points from all       Start/end points only from
-                         retained non-arm-level records   deletion records (CN < 2)
-
-Per-sample bin value     Sum of covering Copy_Number     Initialize at 2; for every
-                         values; absent coverage is 0     covering deletion subtract
-                                                         (2 - Copy_Number), yielding
-                                                         the deletion-oriented 2/1/0
-                                                         landscape in the usual case
-
-Arm-level handling       Inspected amp bin builder        gen_bin_del.cpp reads the
-                         removes is_arm_level=True        merged table directly and has
-                         records                          no arm-level test
-
-Raw matrix schema        start, end, chr, samples, sum   Chromosome, Start, End, samples
-
-Configured extension     .txt                            .tsv
-
-Fixed patient width      40                              40
-
-Column compression       Shared preprocess/compress.py: select the 40 globally highest-
-                         mean columns, distribute remaining columns round-robin among
-                         them, and average each group. If fewer than 40 columns, pad 2.
-                         Directory selection differs by mut/host.
-
-Center annotations       type_centers_index*.yaml        type_centers_del.yaml
-                         (amp-specific labels)            (del-specific labels)
-
-Allowed center format    Current amp generator requires  del generator accepts either
-                         row indices                      Mb coordinates (nearest row) or
-                                                         row indices
-
-Positive/negative label  pos -> 1; neg -> 0              pos -> 1; neg -> 0
-
-Paper window shapes      50x40, 100x40, 2000x40          20x40, 50x40, 400x40
-
-Current YAML shapes      50x40, 250x40, 2000x40          20x40, 50x40, 400x40
-
-Observed local artifact  No flat amp training TSVs were  GeneratedSamples_del_compressed
-                         present in the named top-level   has 83 TSVs, each using
-                         amp directories                 50x40, 100x40, 500x40
-
-Normalization in current Column-wise z-score over the    Configurable NORM_METHOD,
-generators               full chromosome feature matrix defaults to column-wise z-score
-                         is hard-coded at extraction;     over the full chromosome;
-                         values are clipped to [-10,10]   default clipping [-10,10]
-
-Boundary behavior        Same practical implementation in both generators: take the first
-                         or last H rows when a center is near an end, then np.roll those
-                         real rows to place the center at the middle. This avoids constant
-                         row padding. The paper describes this conceptually as duplication
-                         and concatenation of adjacent real matrix regions.
-
-Within-window columns    Both sort columns by descending mean. If width is below W, pad
-                         with a derived constant; if above W, merge columns round-robin.
-
-Output sample format     Same: label header followed by three `scale: i, shape: HxW`
-                         blocks, then filename <type>_<chrom>_<bp>_<pos|neg>.tsv
-
-Dataset/parser           Same Model/utils/Dataset.py; it reads any number of scale blocks
-
-Model                    Same ComplexMultiStreamCNN; one identical CNN branch per supplied
-                         scale, 4-head self-attention over branch vectors, FFN/residual/
-                         layer normalization, mean fusion, and one-logit MLP classifier
-
-Loss                     BCEWithLogitsLoss               BCEWithLogitsLoss
-
-Optimizer/schedule       Adam(lr=1e-5, weight_decay=3e-2) and ReduceLROnPlateau in the
-                         current main training variants for both mutation types
-
-Model selection          Same: highest validation F1, with AUC as tie-break
-
-Current k-fold entry     Model/theta.py points to amp     Model/kFold_panCancer.py points
-                         XR/late-normalized data           to del data
-
-Training-code delta      A direct diff of theta.py and kFold_panCancer.py shows only the
-                         main-program mut_type and data_dir selection differ. The k-fold
-                         function itself is the same.
-
-Output namespace         experimental/amp/...            experimental/del/...
-
-Inference/mapping        Chooses amp sample/matrix roots  Chooses del sample/matrix roots
-                         and amp result names             and del result names
-
-
-4. STAGE-BY-STAGE INTERPRETATION
---------------------------------
-
-4.1 Raw CNA representation and bin construction
-
-The deletion split happens early and intentionally. In
-preprocess/Version0209/gen_bin_del.cpp, only CN<2 segment endpoints are used to
-create bins. All patients are initialized to 2 in every deletion bin, and a
-covering deletion lowers that patient's value by its distance below 2. This makes
-normal positions bright/constant at 2 and deletions downward deviations.
-
-The inspected amplification-side bin builder,
-preprocess/Version0209/gen_bin_0306_cpp.cpp, instead filters arm-level records,
-uses every retained segment endpoint, and sums raw Copy_Number for every covering
-segment. It therefore retains a fuller focal copy-number landscape rather than
-creating an amp-only 2-versus->2 matrix. “amp” is ultimately defined by the
-labeled center and learned peak pattern, not by a CN>2 filter in that builder.
-
-This is the most important semantic difference. It means del and amp matrices
-are not simple sign-flipped copies and cannot safely share center indices or
-trained checkpoints.
-
-4.2 Standardizing the patient/sample axis
-
-The article says cohorts are normalized to 40 channels: cohorts with more than
-40 samples are folded by modulo assignment and averaged; cohorts with fewer than
-40 are padded with diploid value 2.
-
-preprocess/compress.py uses a related but more selective implementation for both
-types. It first ranks patient columns by whole-matrix mean and keeps the top 40 as
-anchors, then assigns all remaining columns to those anchors round-robin and
-averages. Below 40, it pads with 2. Because the same descending-mean rule is used
-for deletion matrices, its semantic effect differs: high means in del data tend
-to identify relatively normal/less-deleted samples, whereas high means in amp
-data tend to identify higher-copy samples. This is a behavior difference caused
-by the data representation, even though the code is shared.
-
-There is also a schema detail: compress.py treats the final column as a suffix
-and excludes it from patient compression. This matches amp's explicit `sum`
-column. The deletion bin format shown by gen_bin_del.cpp has no explicit suffix;
-therefore understanding any particular del dataset requires checking which
-preprocessor/version created it rather than assuming the schemas are identical.
-
-4.3 Labeled center selection
-
-Both generators consume manually/tool-curated positive and negative centers and
-write label 1 or 0 respectively. The article says positives combine visual
-curation with GISTIC2 and RUBIC results; centers found by both tools, or unique to
-one tool but visually confirmed, may be included. This labeling principle is the
-same for amp and del, but the actual YAML center lists are different and are
-indexed against different bin grids. The deletion-only endpoints change its row
-coordinate system, so an amp row index generally does not denote the same genomic
-location in del.
-
-4.4 Multi-scale sampling
-
-For each labeled bin, both pipelines extract three symmetric genomic contexts.
-Every matrix has 40 patient columns, but amp uses much taller contexts because
-the empirical amplification-length distribution motivated broader windows. del
-uses 20/50/400 in the article and current YAML. The three matrices remain separate
-branches rather than being resized to a single common height.
-
-Important version distinction:
-
-* Article and stable older amp scripts: 50/100/2000.
-* Current gen_dataset/config.yaml: 50/250/2000.
-* Article and current gen_dataset/config_del.yaml: 20/50/400.
-* Existing GeneratedSamples_del_compressed files: 50/100/500, matching
-  gen_dataset/gen_sample_del_old.py rather than current config_del.yaml.
-
-This is configuration/history drift, not a del/amp model-architecture difference.
-For reproducibility, a run should be described by both mutation type and exact
-sample directory/generator configuration.
-
-4.5 Neural network and training
-
-Model/Models.py creates one structurally identical branch for every matrix found
-in the input sample. Each branch applies separable convolution, batch norm, ReLU,
-max pooling, three residual blocks, ECA channel attention, adaptive average
-pooling and a linear projection. The three feature vectors are stacked; 4-head
-self-attention models cross-scale interactions; a residual FFN refines them;
-branch-wise mean pooling and an MLP produce one logit.
-
-No conditional `if mut == amp/del` exists inside this model. Different window
-heights affect computation and receptive context, but adaptive pooling makes the
-same architecture accept either shape family. Likewise, the inspected training
-functions use the same loss and hyperparameters. Separate checkpoints are needed
-because the input distributions and learned tasks differ, not because two model
-classes are defined.
-
-Two evaluation organizations coexist:
-
-* Model/auto_cross_ct_val.py implements leave-one-cancer-project-out evaluation:
-  one cancer type is validation and all others train. This matches the article's
-  primary TCGA evaluation description. Its amp and del branches only select
-  different sample directories.
-* Model/theta.py (amp) and Model/kFold_panCancer.py (del) implement ordinary
-  stratified 5-fold evaluation over the combined samples. These two files are
-  otherwise identical in the inspected checkout. This is a later/alternative
-  experiment design and should not be confused with article LOO results.
-
-
-5. WHAT IS TRULY SHARED VS. MUTATION-SPECIFIC
-----------------------------------------------
-
-Mutation-specific:
-
-* Biological event filtering and numerical meaning of the chromosome matrix.
-* Bin boundary grid and thus center row indices.
-* Center-label YAML files.
-* Multi-scale window heights.
-* Input sample directories, model checkpoint directories, and mapped outputs.
-* In this checkout, some preprocessing schema/extension conventions.
-
-Shared:
-
-* Fixed width of 40 patient channels.
-* General centered-window extraction, boundary rolling, column sorting/fitting,
-  sample TSV serialization, and labels 1/0.
-* TSVDataset parsing and batch collation.
-* CNN/residual/ECA branch design, multi-head cross-scale attention, FFN, mean
-  fusion, and MLP classifier.
-* BCE-with-logits objective, Adam optimization, adaptive LR schedule, metrics,
-  F1-based checkpoint selection, ROC output, and most experiment logging.
-
-
-6. PAPER-TO-CODE ALIGNMENT
+2. MUTATION-SPECIFIC FILES
 --------------------------
 
-Strong alignments:
+Stage                    amp                              del
+-----------------------  -------------------------------  -------------------------------
+Bin preprocessing        sort.py plus                    gen_bin_del.cpp
+                         gen_bin_0306_cpp.cpp
 
-* Separate amplification and deletion learning tasks.
-* Deletion processing ignores copy gains and uses deviation from diploid 2.
-* Three mutation-specific genomic scales, each with 40 patient channels.
-* Use of real neighboring matrix content instead of constant boundary padding.
-* Parallel feature branches, residual feature learning, cross-scale attention,
-  binary classification with BCEWithLogitsLoss.
-* A leave-one-project-out training/evaluation implementation exists.
+Compression              preprocess/compress.py          preprocess/compress.py
+                         with mut="amp"                   with mut="del"
 
-Implementation/version differences to keep in mind (not a bug inventory):
+Generator config         gen_dataset/config.yaml         gen_dataset/config_del.yaml
 
-* Current amp YAML's middle window is 250 rather than the article's 100.
-* Existing local del sample artifacts use 50/100/500 rather than current
-  20/50/400.
-* Current k-fold scripts are not the article's LOO protocol.
-* The checked-in 40-column compression ranks anchor columns before modulo folding,
-  while the article describes modulo folding/averaging more generally.
-* The amp focal bin builder removes arm-level records, while the article presents
-  CRESCENT as detecting both focal and broad events. Other experiment-specific
-  preprocessing files may have been used for broad-event analyses.
-* The repository contains many legacy and experiment variants. Directory names
-  such as `_80`, `_40`, `XR_late_norm`, `baseline_improved`, and old generators
-  are meaningful provenance, not interchangeable aliases.
+Label manifest           type_centers_index.yaml          type_centers_del.yaml
+
+Sample generator         gen_sample_amp.py                gen_sample_del.py
+
+Scale shapes             50x40, 250x40, 2000x40          20x40, 50x40, 400x40
+
+Training namespace       experimental/amp/               experimental/del/
 
 
-7. PRACTICAL READING GUIDE
---------------------------
+3. MATRIX REPRESENTATION
+------------------------
 
-For the clearest understanding of the current design, read in this order:
+amp
+  preprocess/Version0209/sort.py identifies arm-level segments using the GRCh38
+  chromosome-arm reference and writes per-chromosome segment files.
 
-1. preprocess/Version0209/gen_bin_del.cpp
-   Definitive explanation of why and how deletion matrices differ.
+  preprocess/Version0209/gen_bin_0306_cpp.cpp removes arm-level records, creates
+  bins from the remaining segment endpoints, and writes raw covering copy-number
+  values. Uncovered sample bins are represented by diploid value 2.
 
-2. preprocess/Version0209/gen_bin_0306_cpp.cpp
-   General/focal binning path used as the amplification-side comparison.
+del
+  preprocess/Version0209/gen_bin_del.cpp uses only records with Copy_Number < 2
+  to define bin boundaries. Every sample/bin begins at 2. A deletion covering a
+  complete bin subtracts 2 - Copy_Number. Copy gains do not contribute to the
+  deletion matrix.
 
-3. preprocess/compress.py
-   Shared 40-column reduction with mutation-specific directories.
-
-4. gen_dataset/config.yaml and gen_dataset/config_del.yaml
-   Current amp/del data roots, extensions, and scale definitions.
-
-5. gen_dataset/gen_sample_amp.py and gen_dataset/gen_sample_del.py
-   Label resolution, normalization, window extraction and serialization.
-
-6. Model/utils/Dataset.py and Model/Models.py
-   Shared parsing and model architecture.
-
-7. Model/auto_cross_ct_val.py
-   Article-like leave-one-project-out experiment path.
-
-8. Model/theta.py and Model/kFold_panCancer.py
-   Later amp and del stratified k-fold entry points.
-
-9. Model/check.py and Model/mapping.py
-   Mutation-specific inference directories and mapping back to genome bins.
+The two representations are therefore not sign-flipped copies. They use
+different bin grids and different numerical signals, so their center indices and
+checkpoints are not interchangeable.
 
 
-8. CODE EVIDENCE INDEX
-----------------------
+4. PATIENT-AXIS COMPRESSION
+---------------------------
 
-Deletion construction
-* preprocess/Version0209/gen_bin_del.cpp:7-22
-  Rationale and deletion-only algorithm.
-* preprocess/Version0209/gen_bin_del.cpp:104-110
-  Only CN<2 endpoints define bins.
-* preprocess/Version0209/gen_bin_del.cpp:123-137
-  Baseline 2 and subtraction of 2-CN.
-* preprocess/Version0209/gen_bin_del.cpp:141-150
-  Deletion output schema.
+preprocess/compress.py standardizes matrices to 40 patient columns:
 
-Amplification/general construction
-* preprocess/Version0209/gen_bin_0306_cpp.cpp:90-113
-  Arm-level filtering and bin boundaries.
-* preprocess/Version0209/gen_bin_0306_cpp.cpp:126-166
-  Raw covering Copy_Number accumulation and zero fill.
+  1. Separate the first three metadata columns and final suffix column.
+  2. If fewer than 40 patient columns exist, pad with diploid value 2.
+  3. Rank patient columns by whole-matrix mean.
+  4. Keep the 40 highest-mean columns as anchors.
+  5. Assign remaining columns round-robin to the anchors and average each group.
 
-Shared 40-column compression
-* preprocess/compress.py:6-25
-  Mutation-specific roots and K=40.
-* preprocess/compress.py:42-92
-  Schema split, diploid padding, top-mean anchors, modulo merge and output.
-
-Current sample configurations
-* gen_dataset/config.yaml:4-27
-  amp data root, .txt extension, 40 columns, 50/250/2000 windows.
-* gen_dataset/config_del.yaml:4-25
-  del data root, .tsv extension, 40 columns, 20/50/400 windows.
-
-Sample generation
-* gen_dataset/gen_sample_amp.py:126-286
-  amp normalization scopes and common window/column operations.
-* gen_dataset/gen_sample_amp.py:315-332, 353-506
-  amp index centers, two-pass extraction, optional global matrix, output.
-* gen_dataset/gen_sample_del.py:118-214
-  del full-matrix normalization, clipping, extraction and column fitting.
-* gen_dataset/gen_sample_del.py:272-314, 316-416
-  del Mb/index resolution and sample writing.
-* gen_dataset/gen_sample_del_old.py:30-41
-  Source of the locally observed 50/100/500 historical del shape family.
-
-Shared model/training
-* Model/utils/Dataset.py:8-160
-  Mutation-agnostic sample discovery and scale parsing.
-* Model/Models.py:106-191
-  Shared branch, attention, fusion and classifier.
-* Model/auto_cross_ct_val.py:363-665
-  Shared LOO training path.
-* Model/auto_cross_ct_val.py:792-813
-  amp/del branch changes data_dir and mut namespace.
-* Model/kFold_panCancer.py:70-205
-  Shared stratified k-fold training function and hyperparameters.
-* Model/kFold_panCancer.py:420-447
-  del entry configuration.
-* Model/theta.py:420-449
-  amp entry configuration.
+Set mut="amp" or mut="del" near the top of the script before running it.
 
 
-9. BOTTOM LINE
---------------
+5. LABELS AND SAMPLE GENERATION
+-------------------------------
 
-Think of this project as two different data encoders feeding one classifier:
+amp uses:
 
-  amp encoder = broader raw-copy-number contexts around amp-labeled centers
-  del encoder = smaller deletion-isolated contexts around del-labeled centers
-  shared learner = three CNN branches + cross-scale attention + binary head
+  gen_dataset/config.yaml
+  gen_dataset/type_centers_index.yaml
+  gen_dataset/gen_sample_amp.py
 
-The `mut_type` string itself is not what teaches the network amplification versus
-deletion. The distinction is already embedded in the chromosome matrices, center
-annotations, window sizes, chosen sample directory, and separately trained
-checkpoint. Consequently, the most reliable way to reproduce or compare the two
-pipelines is to record the exact preprocessing executable, YAML files, generated
-sample directory and observed scale headers alongside the mutation type.
+del uses:
+
+  gen_dataset/config_del.yaml
+  gen_dataset/type_centers_del.yaml
+  gen_dataset/gen_sample_del.py
+
+Both label manifests organize centers as:
+
+  TYPE_CENTERS
+    <cancer project>
+      <chromosome>
+        pos: [row indices]
+        neg: [row indices]
+
+Both generators:
+
+  * resolve positive centers to label 1 and negative centers to label 0;
+  * extract three centered genomic windows;
+  * sort patient columns by descending mean;
+  * pad or fold columns to the configured width;
+  * write one TSV per labeled center.
+
+The main generator difference is the three configured window heights. Amp uses
+broader genomic contexts; del uses smaller contexts around deletion signals.
+
+
+6. SHARED DATASET AND MODEL
+---------------------------
+
+Model/utils/Dataset.py parses the label and all scale blocks from each generated
+TSV. The mutation name does not change parsing.
+
+Model/Models.py defines ComplexMultiStreamCNN. It applies the same branch design
+to every scale, combines scale features with multi-head attention, averages the
+refined branch vectors, and produces one binary logit.
+
+The model contains no amp-versus-del conditional computation. Mutation type is
+determined before training by the selected matrices, labels, scale shapes,
+sample directory, and output namespace.
+
+
+7. SHARED TRAINING AND VALIDATION
+---------------------------------
+
+Model/auto_cross_ct_val.py is the training and validation script for both
+mutation types. For each requested cancer project it:
+
+  1. holds out that project's samples as validation data;
+  2. trains on all other projects;
+  3. uses BCEWithLogitsLoss and Adam;
+  4. schedules learning rate from validation loss;
+  5. evaluates train and validation metrics each epoch;
+  6. selects the checkpoint with the highest validation F1, using AUC as the
+     tie-breaker;
+  7. writes metrics, checkpoints, ROC data, plots, timings, and a project-level
+     summary.
+
+Before running, configure mut_type, data_dir, cancer_list, seeds, and training
+hyperparameters in Model/auto_cross_ct_val.py. Amp and del must use separate
+generated-sample directories and result namespaces.
+
+
+8. PRACTICAL FILE ORDER
+-----------------------
+
+Read or run the canonical pipeline in this order:
+
+  1. Data/merged_dataframe/
+  2. preprocess/Version0209/sort.py and gen_bin_0306_cpp.cpp for amp,
+     or preprocess/Version0209/gen_bin_del.cpp for del
+  3. preprocess/compress.py
+  4. gen_dataset/config.yaml or config_del.yaml
+  5. gen_dataset/type_centers_index.yaml or type_centers_del.yaml
+  6. gen_dataset/gen_sample_amp.py or gen_sample_del.py
+  7. Model/utils/Dataset.py
+  8. Model/Models.py
+  9. Model/utils/train.py and Model/utils/evaluate.py
+ 10. Model/auto_cross_ct_val.py
+
+
+9. OTHER DEVELOPMENT VERSIONS
+------------------------------
+
+The original source tree also contained experimental files that are not part of
+the canonical CRESCENT-dev pipeline:
+
+  * auto_cross_ct_val_03.py: earlier 50-epoch leave-one-project-out settings.
+  * auto_cross_ct_val_before0913.py and auto_cross_ct_val_baseline.py: older
+    AUC-oriented checkpoint selection.
+  * auto_cross_ct_val_shin0905.py with Dataset_neo0905.py: balanced domain/label
+    batch sampling.
+  * theta.py and kFold_panCancer.py: ordinary stratified k-fold experiments,
+    not leave-one-project-out validation.
+  * gen_sample_del_old.py: historical deletion scales of 50/100/500.
+  * dated type_centers_index files: historical label snapshots consolidated
+    into the two manifests retained by this archive.
+  * center_position.yaml with centers_coord_to_index.py: coordinate-based label
+    conversion retained for provenance.
+  * rubic_sim_a.yaml: auxiliary RUBIC simulation labels.
+
+These names are useful only for interpreting old results. New development runs
+use the pipeline in Sections 1-8 and Model/auto_cross_ct_val.py.
